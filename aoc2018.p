@@ -205,6 +205,40 @@ DEFINE TEMP-TABLE ttRecipe
    FIELD iRecipe AS INTEGER
 INDEX indIndex IS UNIQUE iIndex.
 
+/* Day 15 */
+DEFINE TEMP-TABLE ttBoard
+   FIELD iRound AS INTEGER
+   FIELD iX     AS INTEGER
+   FIELD iY     AS INTEGER
+   FIELD cType  AS CHARACTER /* #=Wall, .=Empty, E=Elf, G=Goblin */
+INDEX indXY IS UNIQUE PRIMARY iY iX.
+
+DEFINE TEMP-TABLE ttUnit
+   FIELD iID        AS INTEGER
+   FIELD iRound     AS INTEGER
+   FIELD iX         AS INTEGER
+   FIELD iY         AS INTEGER
+   FIELD cType      AS CHARACTER
+   FIELD iPower     AS INTEGER
+   FIELD iHitPoints AS INTEGER
+INDEX indID IS UNIQUE iID
+INDEX indXY IS PRIMARY iY iX.
+
+DEFINE TEMP-TABLE ttPath
+   FIELD iID_From  AS INTEGER
+   FIELD iID_To    AS INTEGER
+   FIELD iX_Start  AS INTEGER
+   FIELD iY_Start  AS INTEGER
+   FIELD iX_From   AS INTEGER
+   FIELD iY_From   AS INTEGER
+   FIELD iX_To     AS INTEGER
+   FIELD iY_To     AS INTEGER
+   FIELD iDistance AS INTEGER
+INDEX indIDs      IS UNIQUE iID_From iID_To
+INDEX indNearest  IS PRIMARY iID_From iDistance iY_To iX_To
+INDEX indXY       iX_To iY_To iDistance
+INDEX indDistance iDistance iY_To iX_To.
+
 /* _UIB-CODE-BLOCK-END */
 &ANALYZE-RESUME
 
@@ -269,7 +303,7 @@ FUNCTION getPatternIn RETURNS CHARACTER
 &ANALYZE-SUSPEND _CREATE-WINDOW
 /* DESIGN Window definition (used by the UIB) 
   CREATE WINDOW Procedure ASSIGN
-         HEIGHT             = 22.81
+         HEIGHT             = 22.86
          WIDTH              = 60.
 /* END WINDOW DEFINITION */
                                                                         */
@@ -389,19 +423,34 @@ DEFINE INPUT  PARAMETER ipiFontSize  AS INTEGER     NO-UNDO.
 DEFINE VARIABLE cCommand   AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE cImageFile AS CHARACTER   NO-UNDO.
 
+DEFINE VARIABLE cSize   AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cRotate AS CHARACTER   NO-UNDO.
+
    ASSIGN
       cImageFile = SUBSTITUTE("&1.png", 
                               SUBSTRING(ipcInputFile, 1, R-INDEX(ipcInputFile, ".") - 1))
    .
 
-   cCommand = SUBSTITUTE('convert -size &1x&2 xc:white -gravity center -font "Courier-New" -pointsize &3 -fill black -annotate +15+15 "@&4" "&5"',
+   IF ipiWidth LT ipiHeight THEN DO:
+      cRotate = "90x90".
+      cSize   = SUBSTITUTE("&1x&2",
+                           ipiHeight,
+                           ipiWidth).
+   END.
+   ELSE DO:
+      cSize = SUBSTITUTE("&1x&2",
                          ipiWidth,
-                         ipiHeight,
+                         ipiHeight).
+   END.
+
+   cCommand = SUBSTITUTE('convert -size &1 xc:white -gravity center -font "Courier-New" -pointsize &2 -fill black -annotate &5+0+0 "@&3" "&4"',
+                         cSize,
                          ipiFontSize,
                          ipcInputFile,
-                         cImageFile).
+                         cImageFile,
+                         cRotate).
 
-/*    PUBLISH "debug" (SUBSTITUTE("&1", cCommand)). */
+   PUBLISH "nodebug" (SUBSTITUTE("&1", cCommand)).
 
    OS-COMMAND SILENT VALUE(cCommand).
 
@@ -1508,7 +1557,7 @@ PROCEDURE getDay14 :
 DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
 DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
 DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
-DEFINE OUTPUT PARAMETER opiOutputY AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
 
 /* Variables for handling of the puzzle input */
 DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
@@ -1538,6 +1587,7 @@ DEFINE VARIABLE iEntry         AS INTEGER     NO-UNDO.
 DEFINE VARIABLE cSum           AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE lDebug         AS LOGICAL     NO-UNDO.
 DEFINE VARIABLE cSearch        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cLastString    AS CHARACTER   NO-UNDO.
 
 DEFINE BUFFER ttRecipe1 FOR ttRecipe.
 DEFINE BUFFER ttRecipe2 FOR ttRecipe.
@@ -1638,19 +1688,29 @@ DEFINE BUFFER ttRecipe2 FOR ttRecipe.
    ELSE DO:
       /* Part Two */
       /* Temp-table Solution */
+      iNewID = iNewID + 1.
       CREATE ttRecipe.
       ASSIGN
-         ttRecipe.iIndex  = 1
+         ttRecipe.iIndex  = iNewID
          ttRecipe.iRecipe = 3
       .
+      IF LENGTH(cLastString) EQ LENGTH(lcInput) THEN DO:
+         cLastString = SUBSTRING(cLastString, 2).
+      END.
+      cLastString = cLastString + STRING(ttRecipe.iRecipe).
+
+      iNewID = iNewID + 1.
       CREATE ttRecipe.
       ASSIGN
-         ttRecipe.iIndex  = 2
+         ttRecipe.iIndex  = iNewID
          ttRecipe.iRecipe = 7
       .
-   
+      IF LENGTH(cLastString) EQ LENGTH (lcInput) THEN DO:
+         cLastString = SUBSTRING(cLastString, 2).
+      END.
+      cLastString = cLastString + STRING(ttRecipe.iRecipe).
 
-      RecipeBlock:
+      RecipeBlock2:
       REPEAT:
          FIND ttRecipe1 WHERE ttRecipe1.iIndex = iCurrentElf[1].
          FIND ttRecipe2 WHERE ttRecipe2.iIndex = iCurrentElf[2].
@@ -1674,24 +1734,400 @@ DEFINE BUFFER ttRecipe2 FOR ttRecipe.
                ttRecipe.iIndex = iNewID
                ttRecipe.iRecipe = INTEGER(cChar)
             .
+            IF LENGTH(cLastString) EQ LENGTH(lcInput) THEN DO:
+               cLastString = SUBSTRING(cLastString, 2).
+            END.
+            cLastString = cLastString + STRING(ttRecipe.iRecipe).
+            IF cLastString EQ lcInput THEN DO:
+               /* Found matching input */
+               ASSIGN
+                  opiOutput2 = iNewID - LENGTH(lcInput)
+               .
+               FOR EACH ttRecipe WHERE
+               ttRecipe.iIndex GE iNewID:
+                  PUBLISH "debug" (SUBSTITUTE("&1: &2", ttRecipe.iIndex, ttRecipe.iRecipe)).
+               END.
+               PUBLISH "debug" (SUBSTITUTE("Found solution at &1.", opiOutput2)).
+
+               LEAVE RecipeBlock2.
+            END.
+            IF iNewID MOD 20000 EQ 0 THEN DO:
+               PUBLISH "debug" (SUBSTITUTE("Current Recipe: &1", iNewID)).
+            END.
          END.
 
          /* Move Current Recipe of Elves */
          DO iElf = 1 TO 2:
-            iMaxStep = 1 + INTEGER (ENTRY(iCurrentElf[iElf], lcRecipeList)).
-            DO iStep = 1 TO iMaxStep:
-               IF iCurrentElf[iElf] + 1 LE NUM-ENTRIES(lcRecipeList) THEN DO:
-                  iCurrentElf[iElf] = iCurrentElf[iElf] + 1.
-               END.
-               ELSE DO:
-                  iCurrentElf[iElf] = 1.
-               END.
+            iMaxStep = 1 + iCurrentRecipe[iElf].
+            iMaxStep = iCurrentElf[iElf] + iMaxStep.
+            IF iMaxStep GT iNewID THEN DO:
+               iMaxStep = iMaxStep MOD iNewID.
             END.
+            iCurrentElf[iElf] = iMaxStep.
+         END.
+      END. /* RecipeBlock */
+   END. /* Part Two */
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay15) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay15 Procedure 
+PROCEDURE getDay15 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 15: Beverage Bandits ---
+  Parameters:  
+  Notes:       
+  
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+
+/* Variables for character read */
+DEFINE VARIABLE iChar AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cChar AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug AS CHARACTER   NO-UNDO.
+
+/* Variables for "playground" */
+DEFINE VARIABLE iMinX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE lOutput     AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cOutputFile AS CHARACTER   NO-UNDO.
+
+/* Variables for Rounds */
+DEFINE VARIABLE iRound   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cEnemy   AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iEnemies AS INTEGER     NO-UNDO.
+
+/* Variable for Battle */
+DEFINE VARIABLE iTargets AS INTEGER     NO-UNDO.
+
+/* Variables for Moving */
+DEFINE VARIABLE lMoveOk AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE iNewX   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE inewY   AS INTEGER     NO-UNDO.
+
+/* Buffers for Temp-table */
+DEFINE BUFFER ttBoard FOR ttBoard.
+DEFINE BUFFER ttUp    FOR ttBoard.
+DEFINE BUFFER ttDown  FOR ttBoard.
+DEFINE BUFFER ttRight FOR ttBoard.
+DEFINE BUFFER ttLeft  FOR ttBoard.
+DEFINE BUFFER ttUnit  FOR ttUnit.
+DEFINE BUFFER ttEnemy FOR ttUnit.
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   EMPTY TEMP-TABLE ttBoard.
+   EMPTY TEMP-TABLE ttUnit.
+   EMPTY TEMP-TABLE ttPath.
+
+   ASSIGN
+      iRound = 0
+   .
+
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+      DO iChar = 1 TO LENGTH(cLine):
+         cChar = SUBSTRING(cLine, iChar, 1).
+         CASE cChar:
+            WHEN "#" OR 
+            WHEN "." THEN DO:
+               CREATE ttBoard.
+               ASSIGN 
+                  ttBoard.iRound = iRound
+                  ttBoard.iX     = iChar
+                  ttBoard.iY     = iLine
+                  ttBoard.cType  = cChar
+               .
+            END.
+            WHEN "E" OR
+            WHEN "G" THEN DO:
+               CREATE ttBoard.
+               ASSIGN
+                  ttBoard.iRound = iRound
+                  ttBoard.iX     = iChar
+                  ttBoard.iY     = iLine
+                  ttBoard.cType  = cChar
+               .
+               iNewID = iNewID + 1.
+               CREATE ttUnit.
+               ASSIGN
+                  ttUnit.iID        = iNewID
+                  ttUnit.iX         = ttBoard.iX
+                  ttUnit.iY         = ttBoard.iY
+                  ttUnit.cType      = ttBoard.cType
+                  ttUnit.iPower     = 3
+                  ttUnit.iHitPoints = 200
+               .
+            END.
+         END CASE.
+      END.
+   END.
+   
+   FOR EACH ttBoard:
+      ACCUM ttBoard.iX (MINIMUM MAXIMUM).
+      ACCUM ttBoard.iY (MINIMUM MAXIMUM).
+   END.
+
+   ASSIGN
+      iMinX = (ACCUM MINIMUM ttBoard.iX)
+      iMaxX = (ACCUM MAXIMUM ttBoard.iX)
+      iMinY = (ACCUM MINIMUM ttBoard.iY)
+      iMaxY = (ACCUM MAXIMUM ttBoard.iY)
+   .
+
+   ASSIGN
+      lOutput = TRUE
+   .
+
+   BattleBlock:
+   REPEAT:
+      IF lOutput EQ TRUE THEN DO:
+         RUN outputBoard
+            (INPUT  cFileName,
+             INPUT  iRound,
+             INPUT  0,
+             INPUT  iMinX,
+             INPUT  iMaxX,
+             INPUT  iMinY,
+             INPUT  iMaxY,
+             OUTPUT cOutputFile).
+         RUN createImage
+            (INPUT cOutputFile,
+             INPUT 160, /* MAX ((iMaxX - iMinX), 320), */
+             INPUT 320, /* MAX ((iMaxY - iMinY), 160), */
+             INPUT 6).
+      END.
+
+      FOR EACH ttUnit
+      BREAK
+      BY ttUnit.cType:
+         IF FIRST-OF(ttUnit.cType) THEN DO:
+            ACCUM "Type" (COUNT).
+         END.
+         ACCUM ttUnit.iHitPoints (TOTAL).
+      END.
+
+      IF (ACCUM COUNT "Type") EQ 1 THEN DO:
+         ASSIGN
+            opiOutput1 = iRound
+            opiOutput2 = (ACCUM TOTAL ttUnit.iHitPoints)
+         .
+         LEAVE BattleBlock.
+      END.
+
+      UnitBlock:
+      FOR EACH ttUnit
+      WHERE ttUnit.iRound EQ iRound
+      BREAK
+      BY ttUnit.iY
+      BY ttUnit.iX:
+         /* For each ttUnit */
+         IF ttUnit.cType EQ "E" THEN DO:
+            cEnemy = "G".
+         END.
+         ELSE DO:
+            cEnemy = "E".
          END.
 
-      END. /* RecipeBlock */
+         ASSIGN
+            iEnemies = 0
+         .
 
-   END. /* Part Two */
+         PUBLISH "nodebug" (SUBSTITUTE("Round: &1 ttUnit: ID&2 &3 (&4,&5)", iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY)).
+
+         FIND  ttBoard
+         WHERE ttBoard.iX EQ ttUnit.iX
+         AND   ttBoard.iY EQ ttUnit.iY.
+         FIND  ttUp
+         WHERE ttUp.iX EQ ttBoard.iX
+         AND   ttUp.iY EQ ttBoard.iY - 1 NO-ERROR.
+         FIND  ttDown
+         WHERE ttDown.iX EQ ttBoard.iX
+         AND   ttDown.iY EQ ttBoard.iY + 1 NO-ERROR.
+         FIND  ttLeft
+         WHERE ttLeft.iX EQ ttBoard.iX - 1
+         AND   ttLeft.iY EQ ttBoard.iY NO-ERROR.
+         FIND  ttRight
+         WHERE ttRight.iX EQ ttBoard.iX + 1
+         AND   ttRight.iY EQ ttBoard.iY NO-ERROR.
+
+         PUBLISH "nodebug" (SUBSTITUTE("Board (&1,&2): &3", ttBoard.iX, ttBoard.iY, ttBoard.cType)).
+
+         /* Decide what to do */
+         IF AVAILABLE ttUp AND ttUp.cType EQ cEnemy THEN DO:
+            iEnemies = iEnemies + 1.
+         END.
+         IF AVAILABLE ttDown AND ttDown.cType EQ cEnemy THEN DO:
+            iEnemies = iEnemies + 1.
+         END.
+         IF AVAILABLE ttLeft AND ttLeft.cType EQ cEnemy THEN DO:
+            iEnemies = iEnemies + 1.
+         END.
+         IF AVAILABLE ttRight AND ttRight.cType EQ cEnemy THEN DO:
+            iEnemies = iEnemies + 1.
+         END.
+         
+         PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 (&2,&3) &4 &5 &6: Enemies: &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttUnit.cType, ttUnit.iHitPoints, ttUnit.iPower, iEnemies)). 
+
+         IF iEnemies GT 0 THEN DO:
+            /* Enemies in Range --> Attack */
+            AttackBlock:
+            FOR EACH ttEnemy
+            WHERE ttEnemy.cType EQ cEnemy
+            AND   (ABS (ttEnemy.iX - ttUnit.iX) + ABS(ttEnemy.iY - ttUnit.iY)) EQ 1
+            BREAK
+            BY ttEnemy.iHitPoints
+            BY ttEnemy.iY
+            BY ttEnemy.iX:
+               /* AttackBlock */
+               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Attacks Enemy ID&6 &7 (&8,&9)", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, ttEnemy.iID, ttEnemy.cType, ttEnemy.iX, ttEnemy.iY)).
+
+               PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 &8 (&2,&3) Attacks Enemy ID&4 &9 (&5,&6) with Power &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttEnemy.iID, ttEnemy.iX, ttEnemy.iY, ttUnit.iPower, ttUnit.cType, ttEnemy.cType)).
+
+               ASSIGN
+                  ttEnemy.iHitPoints = ttEnemy.iHitPoints - ttUnit.iPower
+               .
+               IF ttEnemy.iHitPoints LE 0 THEN DO:
+                  /* Enemy dies */
+                  PUBLISH "nodebug" (SUBSTITUTE("&1 (ID&2) killed &3 (ID&4) at location (&5,&6).",
+                                              ttUnit.cType,
+                                              ttUnit.iID,
+                                              ttEnemy.cType,
+                                              ttEnemy.iID,
+                                              ttUnit.iX,
+                                              ttUnit.iY)).
+                  FIND  ttBoard
+                  WHERE ttBoard.iX EQ ttEnemy.iX
+                  AND   ttBoard.iY EQ ttEnemy.iY.
+                  ttBoard.cType = ".".
+                  
+               END.
+
+               IF LAST-OF(ttEnemy.iHitPoints) THEN DO:
+                  LEAVE AttackBlock.
+               END.
+            END. /* AttackBlock */
+            FOR EACH ttEnemy
+            WHERE ttEnemy.cType EQ cEnemy
+            AND   ttEnemy.iHitPoints LE 0:
+               DELETE ttEnemy.
+            END.
+            ASSIGN
+               ttUnit.iRound = ttUnit.iRound + 1
+            .
+         END. /* Enemies in Range --> Attack */
+         ELSE DO:
+            /* No enemies in Range --> Move */
+            RUN getMove
+               (INPUT  ttUnit.iID,
+                INPUT  cEnemy,
+                OUTPUT lMoveOk,
+                OUTPUT iNewX,
+                OUTPUT iNewY).
+            
+            PUBLISH "nodebug" (SUBSTITUTE("getMove(IN &1, IN &2, OUT &3, OUT &4, OUT &5)", ttUnit.iID, cEnemy, lMoveOk, iNewX, iNewY)).
+            IF lMoveOk EQ TRUE THEN DO:
+               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Moves to (&6,&7)", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, iNewX, iNewY)).
+
+               IF  iNewX EQ 0
+               AND iNewY EQ 0 THEN DO:
+                  PUBLISH "nodebug" (SUBSTITUTE("Error!")).
+                  ttUnit.iRound = ttUnit.iRound + 1.
+                  NEXT UnitBlock.
+               END.
+               FIND  ttBoard
+               WHERE ttBoard.iX EQ ttUnit.iX
+               AND   ttBoard.iY EQ ttUnit.iY.
+               ASSIGN
+                  ttBoard.cType = "."
+               .
+               ASSIGN
+                  ttUnit.iRound = ttUnit.iRound + 1
+                  ttUnit.iX     = iNewX
+                  ttUnit.iY     = iNewY
+               .
+               FIND  ttBoard
+               WHERE ttBoard.iX EQ ttUnit.iX
+               AND   ttBoard.iY EQ ttUnit.iY.
+               IF ttBoard.cType NE "." THEN DO:
+                  PUBLISH "nodebug" (SUBSTITUTE("Error in getMove. Move to occupied coordinate: (&1, &2)", iNewX, iNewY)).
+               END.
+               ASSIGN
+                  ttBoard.cType = ttUnit.cType
+               .
+               IF lOutput EQ TRUE THEN DO:
+                  RUN outputBoard
+                     (INPUT  cFileName,
+                      INPUT  iRound,
+                      INPUT  ttUnit.iID,
+                      INPUT  iMinX,
+                      INPUT  iMaxX,
+                      INPUT  iMinY,
+                      INPUT  iMaxY,
+                      OUTPUT cOutputFile).
+                  RUN createImage
+                     (INPUT cOutputFile,
+                      INPUT 160, /* MAX ((iMaxX - iMinX), 320), */
+                      INPUT 320, /* MAX ((iMaxY - iMinY), 160), */
+                      INPUT 6).
+               END.
+            END.
+            ELSE DO:
+               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) No Move found.", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY)).
+
+               PUBLISH "nodebug" (SUBSTITUTE("ttUnit: ID&1 (&2,&3) No Move", ttUnit.iID, ttUnit.iX, ttUnit.iY)).
+               ttUnit.iRound = ttUnit.iRound + 1.
+            END.
+         END. /* No enemies in Range --> Move */
+         
+         PUBLISH "nodebug" (SUBSTITUTE("Round: &1 ID&2 (&3,&4) &5 Points: &6", ttUnit.iRound, ttUnit.iID, ttUnit.iX, ttUnit.iY, ttUnit.cType, ttUnit.iHitPoints)).
+
+      END. /* For each ttUnit */
+      
+      ASSIGN
+         iRound = iRound + 1
+      .
+
+      IF iRound GE 100 THEN DO:
+         LEAVE BattleBlock.
+      END.
+   END. /* BattleBlock: */
 
 
 END PROCEDURE.
@@ -2256,6 +2692,271 @@ DEFINE VARIABLE iDeltaHeight AS INTEGER     NO-UNDO.
 
 /*       iSecond = iSecond + 1. */
    END. /* REPEAT: */
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getMove) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getMove Procedure 
+PROCEDURE getMove :
+/*------------------------------------------------------------------------------
+  Purpose:     Gets a new move in the playground
+  Parameters:  
+  Notes:       
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipiID     AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipcEnemy  AS CHARACTER   NO-UNDO.
+DEFINE OUTPUT PARAMETER oplMoveOk AS LOGICAL     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiNewX   AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiNewY   AS INTEGER     NO-UNDO.
+
+DEFINE VARIABLE iDistance AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX        AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY        AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iNewX     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iNewY     AS INTEGER     NO-UNDO.
+
+/* Define buffers */
+DEFINE BUFFER ttUnit     FOR ttUnit.
+DEFINE BUFFER ttBoard    FOR ttBoard.
+DEFINE BUFFER ttUp       FOR ttBoard.
+DEFINE BUFFER ttDown     FOR ttBoard.
+DEFINE BUFFER ttLeft     FOR ttBoard.
+DEFINE BUFFER ttRight    FOR ttBoard.
+DEFINE BUFFER ttEnemy    FOR ttUnit.
+DEFINE BUFFER ttPath     FOR ttPath.
+DEFINE BUFFER ttNextPath FOR ttPath.
+
+DEFINE VARIABLE iNrNextPath AS INTEGER     NO-UNDO.
+
+   EMPTY TEMP-TABLE ttPath.
+
+   FIND  ttUnit
+   WHERE ttUnit.iID EQ ipiID.
+
+   ASSIGN
+      iDistance = 0
+   .
+
+   CREATE ttPath.
+   ASSIGN
+      ttPath.iID_From  = ipiID
+      ttPath.iID_To    = ?
+      ttPath.iX_Start  = 0
+      ttPath.iY_Start  = 0
+      ttPath.iX_From   = ttUnit.iX
+      ttPath.iY_From   = ttUnit.iY
+      ttPath.iX_To     = ttUnit.iX
+      ttPath.iY_To     = ttUnit.iY
+      ttPath.iDistance = 0
+   .
+
+   NextPathBlock:
+   REPEAT:
+      iNrNextPath = 0.
+
+      PUBLISH "nodebug" (SUBSTITUTE("iDistance: &1", iDistance)).
+
+      FOR EACH ttPath
+      WHERE ttPath.iID_From  EQ ipiID
+      AND   ttPath.iDistance EQ iDistance:
+         ASSIGN
+            iX = ttPath.iX_To
+            iY = ttPath.iY_To
+         .
+
+         FIND  ttBoard
+         WHERE ttBoard.iX EQ iX
+         AND   ttBoard.iY EQ iY.
+         FIND  ttUp
+         WHERE ttUp.iX EQ ttBoard.iX
+         AND   ttUp.iY EQ ttBoard.iY - 1 NO-ERROR.
+         FIND  ttDown
+         WHERE ttDown.iX EQ ttBoard.iX
+         AND   ttDown.iY EQ ttBoard.iY + 1 NO-ERROR.
+         FIND  ttLeft
+         WHERE ttLeft.iX EQ ttBoard.iX - 1
+         AND   ttLeft.iY EQ ttBoard.iY NO-ERROR.
+         FIND  ttRight
+         WHERE ttRight.iX EQ ttBoard.iX + 1
+         AND   ttRight.iY EQ ttBoard.iY NO-ERROR.
+
+         PUBLISH "nodebug" (SUBSTITUTE("Board (&1,&2) = &3", ttBoard.iX, ttBoard.iY, ttBoard.cType)).
+
+         IF AVAILABLE ttUp THEN DO:
+            IF ttUp.cType EQ "." 
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttUp.iX AND ttNextPath.iY_To EQ ttUp.iY) THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("Up..: (&4,&5) + &6 = (&1,&2) = &3", ttUp.iX, ttUp.iY, ttUp.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttUp.iX
+                  ttNextPath.iY_To     = ttUp.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttUp.iX
+                     ttNextPath.iY_Start = ttUp.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+            IF ttUp.cType EQ ipcEnemy THEN DO:
+               /* Enemy in Reach, select this direction */
+               ASSIGN
+                  opiNewX   = ttPath.iX_Start
+                  opiNewY   = ttPath.iY_Start
+                  oplMoveOk = TRUE
+               .
+               LEAVE NextPathBlock.
+            END.
+         END. /* AVAILABLE ttUp */
+         IF AVAILABLE ttDown THEN DO:
+
+            IF ttDown.cType EQ "." 
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttDown.iX AND ttNextPath.iY_To EQ ttDown.iY) THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("Down.: (&4,&5) + &6 = (&1,&2) = &3", ttDown.iX, ttDown.iY, ttDown.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttDown.iX
+                  ttNextPath.iY_To     = ttDown.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttDown.iX
+                     ttNextPath.iY_Start = ttDown.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+            IF ttDown.cType EQ ipcEnemy THEN DO:
+               /* Enemy in Reach, select this direction */
+               ASSIGN
+                  opiNewX   = ttPath.iX_Start
+                  opiNewY   = ttPath.iY_Start
+                  oplMoveOk = TRUE
+               .
+               LEAVE NextPathBlock.
+            END.
+         END. /* AVAILABLE ttDown */
+         IF AVAILABLE ttLeft THEN DO:
+
+            IF ttLeft.cType EQ "."
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttLeft.iX AND ttNextPath.iY_To EQ ttLeft.iY) THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("Left.: (&4,&5) + &6 = (&1,&2) = &3", ttLeft.iX, ttLeft.iY, ttLeft.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttLeft.iX
+                  ttNextPath.iY_To     = ttLeft.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttLeft.iX
+                     ttNextPath.iY_Start = ttLeft.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+            IF ttLeft.cType EQ ipcEnemy THEN DO:
+               /* Enemy in Reach, select this direction */
+               ASSIGN
+                  opiNewX   = ttPath.iX_Start
+                  opiNewY   = ttPath.iY_Start
+                  oplMoveOk = TRUE
+               .
+               LEAVE NextPathBlock.
+            END.
+         END. /* AVAILABLE ttLeft */
+         IF AVAILABLE ttRight THEN DO:
+            PUBLISH "nodebug" (SUBSTITUTE("Right: (&4,&5) + &6 = (&1,&2) = &3", ttRight.iX, ttRight.iY, ttRight.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+            IF ttRight.cType EQ "."
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttRight.iX AND ttNextPath.iY_To EQ ttRight.iY) THEN DO:
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttRight.iX
+                  ttNextPath.iY_To     = ttRight.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttRight.iX
+                     ttNextPath.iY_Start = ttRight.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+            IF ttRight.cType EQ ipcEnemy THEN DO:
+               /* Enemy in Reach, select this direction */
+               ASSIGN
+                  opiNewX   = ttPath.iX_Start
+                  opiNewY   = ttPath.iY_Start
+                  oplMoveOk = TRUE
+               .
+               LEAVE NextPathBlock.
+            END.
+         END. /* AVAILABLE ttRight */
+
+      END. /*  FOR EACH ttPath WHERE ttPath.iDistance EQ iDistance: */
+
+      IF iNrNextPath EQ 0 THEN DO:
+         oplMoveOk = FALSE.
+         LEAVE NextPathBlock.
+      END.
+      ELSE DO:
+         iDistance = iDistance + 1.
+      END.
+
+   END. /* NextPathBlock */
 
 END PROCEDURE.
 
@@ -3159,7 +3860,75 @@ PROCEDURE getTT :
   Parameters:  
   Notes:       
 ------------------------------------------------------------------------------*/
-DEFINE OUTPUT PARAMETER TABLE FOR ttCart.
+DEFINE OUTPUT PARAMETER TABLE FOR ttUnit.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-outputBoard) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE outputBoard Procedure 
+PROCEDURE outputBoard :
+/*------------------------------------------------------------------------------
+  Purpose:     
+  Parameters:  
+  Notes:       
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcFileName   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiRound      AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiUnit       AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiMinX       AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiMaxX       AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiMinY       AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiMaxY       AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opcOutputFile AS CHARACTER   NO-UNDO.
+
+DEFINE VARIABLE iX          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cChar       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cPoints     AS CHARACTER   NO-UNDO.
+
+   opcOutputFile = SUBSTITUTE("&1_&2.txt",
+                              SUBSTRING(ipcFileName, 1, R-INDEX(ipcFilename, ".") - 1),
+                              STRING(ipiRound * 100 + ipiUnit, "99999999")).
+   OUTPUT TO VALUE(opcOutputFile).
+   PUT UNFORMATTED 
+      SUBSTITUTE("After &1 rounds:", ipiRound) SKIP.
+
+   DO iY = ipiMinY TO ipiMaxY:
+      cLine = "".
+      DO iX = ipiMinX TO ipiMaxX:
+         FIND  ttBoard
+         WHERE ttBoard.iX EQ iX
+         AND   ttBoard.iY EQ iY NO-ERROR.
+         IF AVAILABLE ttBoard THEN DO:
+            cChar = ttBoard.cType.
+         END.
+         ELSE DO:
+            cChar = " ".
+         END.
+         cLine = SUBSTITUTE("&1&2", cLine, cChar).
+      END.
+      FOR EACH ttUnit
+      WHERE ttUnit.iY EQ iY
+      BY ttUnit.iX:
+         cLine = SUBSTITUTE("&1 &2(&3)",cLine, ttUnit.cType, ttUnit.iHitPoints).
+      END.
+
+      PUBLISH "debug" (OUTPUT cLine).
+      PUT UNFORMATTED
+         cLine SKIP.
+   END.
+   PUT UNFORMATTED 
+      SKIP(1).
+   OUTPUT CLOSE.
+   
+   PUBLISH "debug" (SUBSTITUTE("FILE:&1", opcOutputFile)).
 
 END PROCEDURE.
 
