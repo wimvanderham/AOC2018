@@ -17,6 +17,7 @@
 /*----------------------------------------------------------------------*/
 
 /* ***************************  Definitions  ************************** */
+DEFINE VARIABLE lviFileNumber AS INTEGER     NO-UNDO.
 
 DEFINE TEMP-TABLE ttFrequency
    FIELD iFrequency   AS INTEGER
@@ -210,8 +211,13 @@ DEFINE TEMP-TABLE ttBoard
    FIELD iRound AS INTEGER
    FIELD iX     AS INTEGER
    FIELD iY     AS INTEGER
-   FIELD cType  AS CHARACTER /* #=Wall, .=Empty, E=Elf, G=Goblin */
-INDEX indXY IS UNIQUE PRIMARY iY iX.
+   /* Day 15: #=Wall, .=Empty, E=Elf, G=Goblin */
+   /* Day 17: #=Clay, .=Sand, |=water flowing ~=water settled */
+   /* Day 18: .=Open, |=Trees, #=Lumber */
+   /* Day 20: .=Room, | or - = Door, #=Wall */
+   FIELD cType  AS CHARACTER 
+INDEX indXY IS UNIQUE PRIMARY iY iX iRound
+INDEX indRoundXY IS UNIQUE iRound iY iX.
 
 DEFINE TEMP-TABLE ttUnit
    FIELD iID        AS INTEGER
@@ -239,6 +245,71 @@ INDEX indNearest  IS PRIMARY iID_From iDistance iY_To iX_To
 INDEX indXY       iX_To iY_To iDistance
 INDEX indDistance iDistance iY_To iX_To.
 
+/* Day 16 */
+DEFINE TEMP-TABLE ttInput
+   FIELD iID            AS INTEGER
+   FIELD RegisterBefore AS INTEGER EXTENT 6
+   FIELD iOperation     AS INTEGER
+   FIELD iA             AS INTEGER
+   FIELD iB             AS INTEGER
+   FIELD iC             AS INTEGER
+   FIELD RegisterAfter  AS INTEGER EXTENT 6
+   FIELD cOpList        AS CHARACTER
+   FIELD iNrOp          AS INTEGER
+INDEX indID IS UNIQUE iID.
+
+DEFINE TEMP-TABLE ttOperation
+   FIELD iOperation AS INTEGER
+   FIELD cOpList    AS CHARACTER
+   FIELD iNrOp      AS INTEGER
+   FIELD cOpCode    AS CHARACTER
+INDEX indOperation IS UNIQUE iOperation.
+
+DEFINE TEMP-TABLE ttTest
+   FIELD iID        AS INTEGER
+   FIELD iOperation AS INTEGER
+   FIELD iA         AS INTEGER
+   FIELD iB         AS INTEGER
+   FIELD iC         AS INTEGER
+INDEX indID IS UNIQUE iID.
+
+/* --- Day 17: Reservoir Research --- */
+DEFINE TEMP-TABLE ttClay
+   FIELD iID AS INTEGER
+   FIELD iX_From AS INTEGER
+   FIELD iX_To   AS INTEGER
+   FIELD iY_From AS INTEGER
+   FIELD iY_To   AS INTEGER
+INDEX indID IS UNIQUE iID
+INDEX indXY IS PRIMARY iY_From iY_To iX_From iX_To.
+
+/* --- Day 18: Settlers of The North Pole --- */
+DEFINE TEMP-TABLE ttValue NO-UNDO
+   FIELD iRound  AS INTEGER
+   FIELD cDigest AS CHARACTER
+INDEX indRound IS UNIQUE iRound.
+
+/* --- Day 19: Go With The Flow --- */
+DEFINE TEMP-TABLE ttProgram
+   FIELD iLine AS INTEGER
+   FIELD cOperation AS CHARACTER
+   FIELD iA         AS INTEGER
+   FIELD iB         AS INTEGER
+   FIELD iC         AS INTEGER
+   FIELD iNrTimes   AS INTEGER
+INDEX indLine IS UNIQUE iLine.
+
+/* --- Day 20: A Regular Map --- */
+DEFINE TEMP-TABLE ttRound
+   FIELD iRound       AS INTEGER
+   FIELD iStartX      AS INTEGER
+   FIELD iStartY      AS INTEGER
+   FIELD iX           AS INTEGER
+   FIELD iY           AS INTEGER
+   FIELD iParentRound AS INTEGER
+   FIELD cDirections  AS CHARACTER FORMAT "X(80)"
+INDEX indRound IS UNIQUE iRound.
+
 /* _UIB-CODE-BLOCK-END */
 &ANALYZE-RESUME
 
@@ -257,6 +328,47 @@ INDEX indDistance iDistance iY_To iX_To.
 
 
 /* ************************  Function Prototypes ********************** */
+
+&IF DEFINED(EXCLUDE-getBinary) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION-FORWARD getBinary Procedure 
+FUNCTION getBinary RETURNS CHARACTER
+(  /* parameter-definitions */ 
+   INPUT ipiNumber AS INTEGER   
+)  FORWARD.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getBitOperation) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION-FORWARD getBitOperation Procedure 
+FUNCTION getBitOperation RETURNS INTEGER
+(  /* parameter-definitions */ 
+   INPUT ipiNumber1   AS INTEGER,
+   INPUT ipcOperation AS CHARACTER,
+   INPUT ipiNumber2   AS INTEGER
+)  FORWARD.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDescription) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION-FORWARD getDescription Procedure 
+FUNCTION getDescription RETURNS CHARACTER
+(  /* parameter-definitions */ 
+   INPUT ipiDayNr AS INTEGER   
+)  FORWARD.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
 
 &IF DEFINED(EXCLUDE-getNodeValue) = 0 &THEN
 
@@ -304,7 +416,7 @@ FUNCTION getPatternIn RETURNS CHARACTER
 /* DESIGN Window definition (used by the UIB) 
   CREATE WINDOW Procedure ASSIGN
          HEIGHT             = 22.86
-         WIDTH              = 60.
+         WIDTH              = 60.2.
 /* END WINDOW DEFINITION */
                                                                         */
 &ANALYZE-RESUME
@@ -406,6 +518,161 @@ END PROCEDURE.
 
 &ENDIF
 
+&IF DEFINED(EXCLUDE-calculate) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE calculate Procedure 
+PROCEDURE calculate :
+/*------------------------------------------------------------------------------
+  Purpose:     
+  Parameters:  
+  Notes:       Does calculation according these specifications:
+Addition:
+
+addr (add register) stores into register C the result of adding register A and register B.
+addi (add immediate) stores into register C the result of adding register A and value B.
+Multiplication:
+
+mulr (multiply register) stores into register C the result of multiplying register A and register B.
+muli (multiply immediate) stores into register C the result of multiplying register A and value B.
+Bitwise AND:
+
+banr (bitwise AND register) stores into register C the result of the bitwise AND of register A and register B.
+bani (bitwise AND immediate) stores into register C the result of the bitwise AND of register A and value B.
+Bitwise OR:
+
+borr (bitwise OR register) stores into register C the result of the bitwise OR of register A and register B.
+bori (bitwise OR immediate) stores into register C the result of the bitwise OR of register A and value B.
+Assignment:
+
+setr (set register) copies the contents of register A into register C. (Input B is ignored.)
+seti (set immediate) stores value A into register C. (Input B is ignored.)
+Greater-than testing:
+
+gtir (greater-than immediate/register) sets register C to 1 if value A is greater than register B. Otherwise, register C is set to 0.
+gtri (greater-than register/immediate) sets register C to 1 if register A is greater than value B. Otherwise, register C is set to 0.
+gtrr (greater-than register/register) sets register C to 1 if register A is greater than register B. Otherwise, register C is set to 0.
+Equality testing:
+
+eqir (equal immediate/register) sets register C to 1 if value A is equal to register B. Otherwise, register C is set to 0.
+eqri (equal register/immediate) sets register C to 1 if register A is equal to value B. Otherwise, register C is set to 0.
+eqrr (equal register/register) sets register C to 1 if register A is equal to register B. Otherwise, register C is set to 0.
+  
+------------------------------------------------------------------------------*/
+DEFINE INPUT-OUTPUT PARAMETER ppiRegister AS INTEGER     NO-UNDO EXTENT 6.
+DEFINE INPUT        PARAMETER ipcOpcode   AS CHARACTER   NO-UNDO.
+DEFINE INPUT        PARAMETER ipiA        AS INTEGER     NO-UNDO.
+DEFINE INPUT        PARAMETER ipiB        AS INTEGER     NO-UNDO.
+DEFINE INPUT        PARAMETER ipiC        AS INTEGER     NO-UNDO.
+
+   CASE ipcOpcode:
+      WHEN "addr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] + ppiRegister[ipiB + 1]
+         .
+      END.
+      WHEN "addi" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] + ipiB
+         .
+      END.
+      WHEN "mulr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] * ppiRegister[ipiB + 1]
+         .
+      END.
+      WHEN "muli" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] * ipiB
+         .
+      END.
+      WHEN "banr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = getBitOperation(ppiRegister[ipiA + 1], "AND", ppiRegister[ipiB + 1])
+         .
+      END.
+      WHEN "bani" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = getBitOperation(ppiRegister[ipiA + 1], "AND", ipiB)
+         .
+      END.
+      WHEN "borr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = getBitOperation(ppiRegister[ipiA + 1], "OR", ppiRegister[ipiB + 1])
+         .
+      END.
+      WHEN "bori" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = getBitOperation(ppiRegister[ipiA + 1], "OR", ipiB)
+         .
+      END.
+      WHEN "setr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1]
+         .
+      END.
+      WHEN "seti" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ipiA
+         .
+      END.
+      WHEN "gtir" THEN DO:
+         IF ipiA GT ppiRegister[ipiB + 1] THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+      WHEN "gtri" THEN DO:
+         IF ppiRegister[ipiA + 1] GT ipiB THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+      WHEN "gtrr" THEN DO:
+         IF ppiRegister[ipiA + 1] GT ppiRegister[ipiB + 1] THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+      WHEN "eqir" THEN DO:
+         IF ipiA EQ ppiRegister[ipiB + 1] THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+      WHEN "eqri" THEN DO:
+         IF ppiRegister[ipiA + 1] EQ ipiB THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+      WHEN "eqrr" THEN DO:
+         IF ppiRegister[ipiA + 1] EQ ppiRegister[ipiB + 1] THEN DO:
+            ppiRegister[ipiC + 1] = 1.
+         END.
+         ELSE DO:
+            ppiRegister[ipiC + 1] = 0.
+         END.
+      END.
+   END CASE.
+
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
 &IF DEFINED(EXCLUDE-createImage) = 0 &THEN
 
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE createImage Procedure 
@@ -472,11 +739,15 @@ PROCEDURE createMovie :
   Parameters:  
   Notes:       
 ------------------------------------------------------------------------------*/
-DEFINE INPUT  PARAMETER ipcInputFile AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipcInputFile   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiDayNr       AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiStartNumber AS INTEGER     NO-UNDO.
 
 DEFINE VARIABLE cCommand AS CHARACTER   NO-UNDO.
 
-   cCommand = SUBSTITUTE("C:\Users\Wim\Downloads>ffmpeg\bin\ffmpeg.exe -framerate 24 -loop 1 -t 10 -i inputAOC2018_13_Example_%06d.png output.mp4").
+   cCommand = SUBSTITUTE("C:\Users\Wim\Downloads\ffmpeg\bin\ffmpeg.exe -y -framerate 2 -start_number &1 -i C:\Users\Wim\Downloads\inputAOC2018_&2_%06d.png outputAOC2018_&2.mp4",
+                         ipiStartNumber,
+                         ipiDayNr).
 
    OS-COMMAND SILENT VALUE(cCommand).
 
@@ -1788,6 +2059,7 @@ PROCEDURE getDay15 :
 ------------------------------------------------------------------------------*/
 DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
 DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPowerE  AS INTEGER     NO-UNDO.
 DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
 DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
 
@@ -1830,6 +2102,7 @@ DEFINE VARIABLE iTargets AS INTEGER     NO-UNDO.
 DEFINE VARIABLE lMoveOk AS LOGICAL     NO-UNDO.
 DEFINE VARIABLE iNewX   AS INTEGER     NO-UNDO.
 DEFINE VARIABLE inewY   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iPowerE AS INTEGER     NO-UNDO.
 
 /* Buffers for Temp-table */
 DEFINE BUFFER ttBoard FOR ttBoard.
@@ -1839,6 +2112,10 @@ DEFINE BUFFER ttRight FOR ttBoard.
 DEFINE BUFFER ttLeft  FOR ttBoard.
 DEFINE BUFFER ttUnit  FOR ttUnit.
 DEFINE BUFFER ttEnemy FOR ttUnit.
+
+   IF ipiPart EQ 1 THEN DO:
+      ipiPowerE = 3.
+   END.
 
    FILE-INFO:FILE-NAME = ipcInput.
    IF FILE-INFO:FILE-TYPE NE ? THEN DO:
@@ -1894,6 +2171,10 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
                   ttUnit.iPower     = 3
                   ttUnit.iHitPoints = 200
                .
+               IF ttUnit.cType EQ "E" THEN DO:
+                  /* Adjust Power */
+                  ttUnit.iPower = ipiPowerE.
+               END.
             END.
          END CASE.
       END.
@@ -1912,27 +2193,28 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
    .
 
    ASSIGN
-      lOutput = TRUE
+      lOutput       = TRUE
+      lviFileNumber = 150000
    .
 
    BattleBlock:
    REPEAT:
-      IF lOutput EQ TRUE THEN DO:
-         RUN outputBoard
-            (INPUT  cFileName,
-             INPUT  iRound,
-             INPUT  0,
-             INPUT  iMinX,
-             INPUT  iMaxX,
-             INPUT  iMinY,
-             INPUT  iMaxY,
-             OUTPUT cOutputFile).
-         RUN createImage
-            (INPUT cOutputFile,
-             INPUT 160, /* MAX ((iMaxX - iMinX), 320), */
-             INPUT 320, /* MAX ((iMaxY - iMinY), 160), */
-             INPUT 6).
-      END.
+/*       IF lOutput EQ TRUE THEN DO:                         */
+/*          RUN outputBoard                                  */
+/*             (INPUT  cFileName,                            */
+/*              INPUT  iRound,                               */
+/*              INPUT  0,                                    */
+/*              INPUT  iMinX,                                */
+/*              INPUT  iMaxX,                                */
+/*              INPUT  iMinY,                                */
+/*              INPUT  iMaxY,                                */
+/*              OUTPUT cOutputFile).                         */
+/*          RUN createImage                                  */
+/*             (INPUT cOutputFile,                           */
+/*              INPUT 160, /* MAX ((iMaxX - iMinX), 320), */ */
+/*              INPUT 320, /* MAX ((iMaxY - iMinY), 160), */ */
+/*              INPUT 6).                                    */
+/*       END.                                                */
 
       FOR EACH ttUnit
       BREAK
@@ -1945,7 +2227,7 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
 
       IF (ACCUM COUNT "Type") EQ 1 THEN DO:
          ASSIGN
-            opiOutput1 = iRound
+            opiOutput1 = iRound - 1
             opiOutput2 = (ACCUM TOTAL ttUnit.iHitPoints)
          .
          LEAVE BattleBlock.
@@ -1965,94 +2247,12 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
             cEnemy = "E".
          END.
 
-         ASSIGN
-            iEnemies = 0
-         .
+         RUN getEnemies
+            (INPUT  ttUnit.iID,
+             INPUT  cEnemy,
+             OUTPUT iEnemies).
 
-         PUBLISH "nodebug" (SUBSTITUTE("Round: &1 ttUnit: ID&2 &3 (&4,&5)", iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY)).
-
-         FIND  ttBoard
-         WHERE ttBoard.iX EQ ttUnit.iX
-         AND   ttBoard.iY EQ ttUnit.iY.
-         FIND  ttUp
-         WHERE ttUp.iX EQ ttBoard.iX
-         AND   ttUp.iY EQ ttBoard.iY - 1 NO-ERROR.
-         FIND  ttDown
-         WHERE ttDown.iX EQ ttBoard.iX
-         AND   ttDown.iY EQ ttBoard.iY + 1 NO-ERROR.
-         FIND  ttLeft
-         WHERE ttLeft.iX EQ ttBoard.iX - 1
-         AND   ttLeft.iY EQ ttBoard.iY NO-ERROR.
-         FIND  ttRight
-         WHERE ttRight.iX EQ ttBoard.iX + 1
-         AND   ttRight.iY EQ ttBoard.iY NO-ERROR.
-
-         PUBLISH "nodebug" (SUBSTITUTE("Board (&1,&2): &3", ttBoard.iX, ttBoard.iY, ttBoard.cType)).
-
-         /* Decide what to do */
-         IF AVAILABLE ttUp AND ttUp.cType EQ cEnemy THEN DO:
-            iEnemies = iEnemies + 1.
-         END.
-         IF AVAILABLE ttDown AND ttDown.cType EQ cEnemy THEN DO:
-            iEnemies = iEnemies + 1.
-         END.
-         IF AVAILABLE ttLeft AND ttLeft.cType EQ cEnemy THEN DO:
-            iEnemies = iEnemies + 1.
-         END.
-         IF AVAILABLE ttRight AND ttRight.cType EQ cEnemy THEN DO:
-            iEnemies = iEnemies + 1.
-         END.
-         
-         PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 (&2,&3) &4 &5 &6: Enemies: &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttUnit.cType, ttUnit.iHitPoints, ttUnit.iPower, iEnemies)). 
-
-         IF iEnemies GT 0 THEN DO:
-            /* Enemies in Range --> Attack */
-            AttackBlock:
-            FOR EACH ttEnemy
-            WHERE ttEnemy.cType EQ cEnemy
-            AND   (ABS (ttEnemy.iX - ttUnit.iX) + ABS(ttEnemy.iY - ttUnit.iY)) EQ 1
-            BREAK
-            BY ttEnemy.iHitPoints
-            BY ttEnemy.iY
-            BY ttEnemy.iX:
-               /* AttackBlock */
-               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Attacks Enemy ID&6 &7 (&8,&9)", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, ttEnemy.iID, ttEnemy.cType, ttEnemy.iX, ttEnemy.iY)).
-
-               PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 &8 (&2,&3) Attacks Enemy ID&4 &9 (&5,&6) with Power &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttEnemy.iID, ttEnemy.iX, ttEnemy.iY, ttUnit.iPower, ttUnit.cType, ttEnemy.cType)).
-
-               ASSIGN
-                  ttEnemy.iHitPoints = ttEnemy.iHitPoints - ttUnit.iPower
-               .
-               IF ttEnemy.iHitPoints LE 0 THEN DO:
-                  /* Enemy dies */
-                  PUBLISH "nodebug" (SUBSTITUTE("&1 (ID&2) killed &3 (ID&4) at location (&5,&6).",
-                                              ttUnit.cType,
-                                              ttUnit.iID,
-                                              ttEnemy.cType,
-                                              ttEnemy.iID,
-                                              ttUnit.iX,
-                                              ttUnit.iY)).
-                  FIND  ttBoard
-                  WHERE ttBoard.iX EQ ttEnemy.iX
-                  AND   ttBoard.iY EQ ttEnemy.iY.
-                  ttBoard.cType = ".".
-                  
-               END.
-
-               IF LAST-OF(ttEnemy.iHitPoints) THEN DO:
-                  LEAVE AttackBlock.
-               END.
-            END. /* AttackBlock */
-            FOR EACH ttEnemy
-            WHERE ttEnemy.cType EQ cEnemy
-            AND   ttEnemy.iHitPoints LE 0:
-               DELETE ttEnemy.
-            END.
-            ASSIGN
-               ttUnit.iRound = ttUnit.iRound + 1
-            .
-         END. /* Enemies in Range --> Attack */
-         ELSE DO:
+         IF iEnemies EQ 0 THEN DO:
             /* No enemies in Range --> Move */
             RUN getMove
                (INPUT  ttUnit.iID,
@@ -2060,10 +2260,10 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
                 OUTPUT lMoveOk,
                 OUTPUT iNewX,
                 OUTPUT iNewY).
-            
+
             PUBLISH "nodebug" (SUBSTITUTE("getMove(IN &1, IN &2, OUT &3, OUT &4, OUT &5)", ttUnit.iID, cEnemy, lMoveOk, iNewX, iNewY)).
             IF lMoveOk EQ TRUE THEN DO:
-               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Moves to (&6,&7)", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, iNewX, iNewY)).
+               PUBLISH "nodebug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Moves to (&6,&7)", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, iNewX, iNewY)).
 
                IF  iNewX EQ 0
                AND iNewY EQ 0 THEN DO:
@@ -2078,7 +2278,6 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
                   ttBoard.cType = "."
                .
                ASSIGN
-                  ttUnit.iRound = ttUnit.iRound + 1
                   ttUnit.iX     = iNewX
                   ttUnit.iY     = iNewY
                .
@@ -2091,35 +2290,98 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
                ASSIGN
                   ttBoard.cType = ttUnit.cType
                .
-               IF lOutput EQ TRUE THEN DO:
-                  RUN outputBoard
-                     (INPUT  cFileName,
-                      INPUT  iRound,
-                      INPUT  ttUnit.iID,
-                      INPUT  iMinX,
-                      INPUT  iMaxX,
-                      INPUT  iMinY,
-                      INPUT  iMaxY,
-                      OUTPUT cOutputFile).
-                  RUN createImage
-                     (INPUT cOutputFile,
-                      INPUT 160, /* MAX ((iMaxX - iMinX), 320), */
-                      INPUT 320, /* MAX ((iMaxY - iMinY), 160), */
-                      INPUT 6).
-               END.
             END.
             ELSE DO:
-               PUBLISH "debug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) No Move found.", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY)).
+               PUBLISH "nodebug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) No Move found.", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY)).
 
                PUBLISH "nodebug" (SUBSTITUTE("ttUnit: ID&1 (&2,&3) No Move", ttUnit.iID, ttUnit.iX, ttUnit.iY)).
-               ttUnit.iRound = ttUnit.iRound + 1.
             END.
+
+            RUN getEnemies
+               (INPUT  ttUnit.iID,
+                INPUT  cEnemy,
+                OUTPUT iEnemies).
          END. /* No enemies in Range --> Move */
-         
+
+         IF iEnemies GT 0 THEN DO:
+            /* Enemies in Range --> Attack */
+            AttackBlock:
+            FOR EACH ttEnemy
+            WHERE ttEnemy.cType EQ cEnemy
+            AND   (ABS (ttEnemy.iX - ttUnit.iX) + ABS(ttEnemy.iY - ttUnit.iY)) EQ 1
+            BREAK
+            BY ttEnemy.iHitPoints
+            BY ttEnemy.iY
+            BY ttEnemy.iX:
+               /* AttackBlock */
+               PUBLISH "nodebug" (SUBSTITUTE("Round: &1 Unit ID&2 &3 (&4,&5) Attacks &6", ttUnit.iRound, ttUnit.iID, ttUnit.cType, ttUnit.iX, ttUnit.iY, 
+                                           SUBSTITUTE ("Enemy ID&1 &2 (&3,&4) with &5 Points", ttEnemy.iID, ttEnemy.cType, ttEnemy.iX, ttEnemy.iY, ttEnemy.iHitPoints))).
+
+               PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 &8 (&2,&3) Attacks Enemy ID&4 &9 (&5,&6) with Power &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttEnemy.iID, ttEnemy.iX, ttEnemy.iY, ttUnit.iPower, ttUnit.cType, ttEnemy.cType)).
+
+               ASSIGN
+                  ttEnemy.iHitPoints = ttEnemy.iHitPoints - ttUnit.iPower
+               .
+               IF ttEnemy.iHitPoints LE 0 THEN DO:
+                  /* Enemy dies */
+                  PUBLISH "nodebug" (SUBSTITUTE("Enemy killed (Hit Points: &1).",
+                                              ttEnemy.iHitPoints,
+                                              ttUnit.cType,
+                                              ttUnit.iID,
+                                              ttEnemy.cType,
+                                              ttEnemy.iID,
+                                              ttUnit.iX,
+                                              ttUnit.iY)).
+                  FIND  ttBoard
+                  WHERE ttBoard.iX EQ ttEnemy.iX
+                  AND   ttBoard.iY EQ ttEnemy.iY.
+                  ttBoard.cType = ".".
+
+               END.
+
+               /* After one hit, done */
+               LEAVE AttackBlock.
+            END. /* AttackBlock */
+            FOR EACH ttEnemy
+            WHERE ttEnemy.cType EQ cEnemy
+            AND   ttEnemy.iHitPoints LE 0:
+               DELETE ttEnemy.
+               IF  ipiPart EQ 2
+               AND cEnemy  EQ "E" THEN DO:
+                  /* Failed Part Two */
+                  ASSIGN
+                     opiOutput1 = -1 * iRound
+                  .
+                  LEAVE BattleBlock.
+               END.
+            END.
+         END. /* Enemies in Range --> Attack */
+
+         ASSIGN
+            ttUnit.iRound = ttUnit.iRound + 1
+         .
+
          PUBLISH "nodebug" (SUBSTITUTE("Round: &1 ID&2 (&3,&4) &5 Points: &6", ttUnit.iRound, ttUnit.iID, ttUnit.iX, ttUnit.iY, ttUnit.cType, ttUnit.iHitPoints)).
 
       END. /* For each ttUnit */
-      
+
+      IF lOutput EQ TRUE THEN DO:
+         RUN outputBoard
+            (INPUT  cFileName,
+             INPUT  iRound,
+             INPUT  ttUnit.iID,
+             INPUT  iMinX,
+             INPUT  iMaxX,
+             INPUT  iMinY,
+             INPUT  iMaxY,
+             OUTPUT cOutputFile).
+         RUN createImage
+            (INPUT cOutputFile,
+             INPUT 160, /* MAX ((iMaxX - iMinX), 320), */
+             INPUT 320, /* MAX ((iMaxY - iMinY), 160), */
+             INPUT 8).
+      END.
+
       ASSIGN
          iRound = iRound + 1
       .
@@ -2129,6 +2391,1996 @@ DEFINE BUFFER ttEnemy FOR ttUnit.
       END.
    END. /* BattleBlock: */
 
+   IF lviFileNumber GT 150000 THEN DO:
+      RUN createMovie
+         (INPUT cOutputFile,
+          INPUT 15,
+          INPUT 150001).
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay16) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay16 Procedure 
+PROCEDURE getDay16 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 16: Chronal Classification ---
+  Parameters:  
+  Notes:       
+  
+DEFINE TEMP-TABLE ttInput
+   FIELD iID            AS INTEGER
+   FIELD RegisterBefore AS INTEGER EXTENT 6
+   FIELD iOperation     AS INTEGER
+   FIELD iA             AS INTEGER
+   FIELD iB             AS INTEGER
+   FIELD iC             AS INTEGER
+   FIELD RegisterAfter  AS INTEGER EXTENT 6
+   FIELD cOpList        AS CHARACTER
+   FIELD iNrOp          AS INTEGER
+INDEX indID IS UNIQUE iID.
+  
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cSection         AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cRegister        AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug AS CHARACTER   NO-UNDO.
+
+/* Variables for Calculating */
+DEFINE VARIABLE iRegisterWork AS INTEGER     NO-UNDO EXTENT 6 FORMAT "9".
+DEFINE VARIABLE cOpCodeList   AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cOpCode       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iOpCode       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cOpList       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lDone         AS LOGICAL     NO-UNDO.
+   
+/* Define buffers for temp-tables */
+DEFINE BUFFER ttReduce FOR ttOperation.
+
+   ASSIGN
+      cOpCodeList = "addr,addi,mulr,muli,banr,bani,borr,bori,setr,seti,gtir,gtri,gtrr,eqir,eqri,eqrr"
+   .
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   EMPTY TEMP-TABLE ttInput.
+
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+
+      /* Input example:
+      **
+      Before: [1, 2, 2, 0]
+      14 1 2 2
+      After:  [1, 2, 4, 0]
+      */
+      IF ENTRY(1, cLine, " ") EQ "Before:" THEN DO:
+         iNewID = iNewID + 1.
+         CREATE ttInput.
+         ASSIGN
+            ttInput.iID = iNewID
+         .
+         cRegister = TRIM (SUBSTRING(cLine, INDEX(cLine, " ") + 1)).
+         cRegister = TRIM(cRegister, "[]").
+         IF NUM-ENTRIES(cRegister) EQ 4 THEN DO:
+            ASSIGN
+               ttInput.RegisterBefore[1] = INTEGER(TRIM (ENTRY(1, cRegister)))
+               ttInput.RegisterBefore[2] = INTEGER(TRIM (ENTRY(2, cRegister)))
+               ttInput.RegisterBefore[3] = INTEGER(TRIM (ENTRY(3, cRegister)))
+               ttInput.RegisterBefore[4] = INTEGER(TRIM (ENTRY(4, cRegister)))
+            .
+         END.
+         cSection = "Input".
+      END.
+      ELSE DO:
+         IF cSection EQ "Input" THEN DO:
+            FIND ttInput 
+            WHERE ttInput.iID EQ iNewID.
+            IF NUM-ENTRIES(cLine, " ") EQ 4 THEN DO:
+               ASSIGN
+                  ttInput.iOperation = INTEGER(ENTRY(1, cLine, " "))
+                  ttInput.iA         = INTEGER(ENTRY(2, cLine, " "))
+                  ttInput.iB         = INTEGER(ENTRY(3, cLine, " "))
+                  ttInput.iC         = INTEGER(ENTRY(4, cLine, " "))
+               .
+            END.
+            cSection = "".
+         END.
+         ELSE DO:
+            IF ENTRY(1, cLine, " ") EQ "After:" THEN DO:
+               FIND  ttInput
+               WHERE ttInput.iID EQ iNewID.
+               cRegister = TRIM (SUBSTRING(cLine, INDEX(cLine, " ") + 1)).
+               cRegister = TRIM(cRegister, "[]").
+               IF NUM-ENTRIES(cRegister) EQ 4 THEN DO:
+                  ASSIGN
+                     ttInput.RegisterAfter[1] = INTEGER(TRIM (ENTRY(1, cRegister)))
+                     ttInput.RegisterAfter[2] = INTEGER(TRIM (ENTRY(2, cRegister)))
+                     ttInput.RegisterAfter[3] = INTEGER(TRIM (ENTRY(3, cRegister)))
+                     ttInput.RegisterAfter[4] = INTEGER(TRIM (ENTRY(4, cRegister)))
+                  .
+               END.
+               cSection = "Test".
+            END.
+            ELSE DO:
+               IF cSection EQ "Test" THEN DO:
+                  IF TRIM (cLine) NE "" THEN DO:
+                     iNewID = iNewID + 1.
+                     CREATE ttTest.
+                     ASSIGN
+                        ttTest.iID        = iNewID
+                        ttTest.iOperation = INTEGER(ENTRY(1, cLine, " "))
+                        ttTest.iA         = INTEGER(ENTRY(2, cLine, " "))
+                        ttTest.iB         = INTEGER(ENTRY(3, cLine, " "))
+                        ttTest.iC         = INTEGER(ENTRY(4, cLine, " "))
+                     .
+                  END.
+               END.
+            END.
+         END.
+      END.
+   END.
+   
+   /* Process Input */
+   FOR EACH ttInput:
+      ttInput.cOpList = "".
+      DO iOpcode = 1 TO NUM-ENTRIES(cOpCodeList):
+         iRegisterWork = ttInput.RegisterBefore.
+         cOpCode = ENTRY(iOpcode, cOpCodeList).
+         RUN calculate
+            (INPUT-OUTPUT iRegisterWork,
+             INPUT        cOpCode,
+             INPUT        ttInput.iA,
+             INPUT        ttInput.iB,
+             INPUT        ttInput.iC).
+
+         IF  iRegisterWork[1] EQ ttInput.RegisterAfter[1]
+         AND iRegisterWork[2] EQ ttInput.RegisterAfter[2]
+         AND iRegisterWork[3] EQ ttInput.RegisterAfter[3]
+         AND iRegisterWork[4] EQ ttInput.RegisterAfter[4] THEN DO:
+            ttInput.cOpList = SUBSTITUTE("&1&2&3",
+                                         ttInput.cOpList,
+                                         (IF ttInput.cOpList NE "" THEN "," ELSE ""),
+                                         cOpCode).
+         END.
+      END.
+      ttInput.iNrOp = NUM-ENTRIES(ttInput.cOpList).
+   END.
+
+   FOR EACH ttInput
+   WHERE ttInput.iNrOp GE 3:
+      ACCUM "" (COUNT).
+   END.
+
+   ASSIGN
+      opiOutput1 = (ACCUM COUNT "")
+   .
+
+   IF ipiPart EQ 2 THEN DO:
+      FOR EACH ttInput:
+         FIND FIRST ttOperation
+         WHERE ttOperation.iOperation EQ ttInput.iOperation NO-ERROR.
+         IF NOT AVAILABLE ttOperation THEN DO:
+            CREATE ttOperation.
+            ASSIGN
+               ttOperation.iOperation = ttInput.iOperation
+            .
+         END.
+
+         DO iOpcode = 1 TO NUM-ENTRIES (ttInput.cOpList):
+            cOpCode = ENTRY(iOpCode, ttInput.cOpList).
+            IF LOOKUP(cOpCode, ttOperation.cOpList) EQ 0  THEN DO:
+               ttOperation.cOpList = SUBSTITUTE("&1&2&3",
+                                                ttOperation.cOpList,
+                                                (IF ttOperation.cOpList EQ "" THEN "" ELSE ","),
+                                                cOpCode).
+            END.
+         END.
+      END.
+      
+      FOR EACH ttOperation:
+         ASSIGN
+            ttOperation.iNrOp = NUM-ENTRIES(ttOperation.cOpList)
+         .
+      END.
+
+      ReduceBlock:
+      REPEAT:
+         lDone = TRUE.
+         FOR EACH ttOperation
+         WHERE ttOperation.cOpCode EQ ""
+         AND   ttOperation.iNrOp   EQ 1:
+            ASSIGN
+               ttOperation.cOpCode = ttOperation.cOpList
+            .
+
+            PUBLISH "debug" (SUBSTITUTE("Operation: &1 = &2.", ttOperation.iOperation, ttOperation.cOpCode)).
+
+            FOR EACH ttReduce 
+            WHERE ttReduce.iNrOp GT 1
+            AND   LOOKUP (ttOperation.cOpCode, ttReduce.cOpList) NE 0:
+               PUBLISH "nodebug" (SUBSTITUTE("Reduce operation: &1 from &2", ttReduce.iOperation, ttReduce.cOpList)).
+               ENTRY(LOOKUP(ttOperation.cOpCode, ttReduce.cOpList), ttReduce.cOpList) = "".
+               ttReduce.cOpList = TRIM (REPLACE(ttReduce.cOpList, ",,", ","), ",").
+               ttReduce.iNrOp   = NUM-ENTRIES(ttReduce.cOpList).
+               PUBLISH "nodebug" (SUBSTITUTE("---- to &1.", ttReduce.cOpList)).
+               lDone = FALSE.
+            END.
+         END.
+         IF lDone EQ TRUE THEN DO:
+            LEAVE.
+         END.
+      END. /* ReduceBlock */
+
+      ASSIGN
+         iRegisterWork = 0
+      .
+      FOR EACH ttTest:
+         FIND ttOperation
+         WHERE ttOperation.iOperation EQ ttTest.iOperation.
+         
+         RUN calculate
+            (INPUT-OUTPUT iRegisterWork,
+             INPUT        ttOperation.cOpCode,
+             INPUT        ttTest.iA,
+             INPUT        ttTest.iB,
+             INPUT        ttTest.iC).
+      END.
+
+      ASSIGN
+         opiOutput2 = iRegisterWork[1]
+      .
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay17) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay17 Procedure 
+PROCEDURE getDay17 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 17: Reservoir Research ---
+  Parameters:  
+  Notes:       
+  
+DEFINE TEMP-TABLE ttClay
+   FIELD iID AS INTEGER
+   FIELD iX_From AS INTEGER
+   FIELD iX_To   AS INTEGER
+   FIELD iY_From AS INTEGER
+   FIELD iY_To   AS INTEGER
+INDEX indID IS UNIQUE iID
+INDEX indXY IS PRIMARY iY_From iY_To iX_From iX_To.
+  
+DEFINE TEMP-TABLE ttBoard
+   FIELD iRound AS INTEGER
+   FIELD iX     AS INTEGER
+   FIELD iY     AS INTEGER
+   /* Day 15: #=Wall, .=Empty, E=Elf, G=Goblin */
+   /* Day 17: #=Clay, .=Sand, |=water flowing ~=water settled */
+   FIELD cType  AS CHARACTER 
+INDEX indXY IS UNIQUE PRIMARY iY iX.
+
+DEFINE TEMP-TABLE ttUnit
+   FIELD iID        AS INTEGER
+   FIELD iRound     AS INTEGER
+   FIELD iX         AS INTEGER
+   FIELD iY         AS INTEGER
+   FIELD cType      AS CHARACTER
+   FIELD iPower     AS INTEGER
+   FIELD iHitPoints AS INTEGER
+INDEX indID IS UNIQUE iID
+INDEX indXY IS PRIMARY iY iX.
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cOutputFile      AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iCoordinate      AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cCoordinates     AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cValues          AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iX_From          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX_To            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY_From          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY_To            AS INTEGER     NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug AS CHARACTER   NO-UNDO.
+
+/* Define buffers for temp-tables */
+DEFINE BUFFER ttGround    FOR ttBoard.
+DEFINE BUFFER ttDown      FOR ttBoard.
+DEFINE BUFFER ttRight     FOR ttBoard.
+DEFINE BUFFER ttLeft      FOR ttBoard.
+DEFINE BUFFER ttWater     FOR ttBoard.
+DEFINE BUFFER ttWet       FOR ttBoard.
+DEFINE BUFFER ttLeftDown  FOR ttBoard.
+DEFINE BUFFER ttRightDown FOR ttBoard.
+DEFINE BUFFER ttNewUnit   FOR ttUnit.
+
+/* Variables for puzzle solving */
+DEFINE VARIABLE iX          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE lFoundRight AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE lFoundLeft  AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE iRightMax   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iLeftMin    AS INTEGER     NO-UNDO.
+DEFINE VARIABLE lTransform  AS LOGICAL     NO-UNDO.
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   EMPTY TEMP-TABLE ttClay.
+   EMPTY TEMP-TABLE ttGround.
+   EMPTY TEMP-TABLE ttUnit.
+
+   PUBLISH "nodebug" (SUBSTITUTE("Start load input.")).
+
+   InputBlock:
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+
+      /* Input examples:
+      **
+      x=507, y=1652..1666
+      x=541, y=962..989
+      x=600, y=75..81
+      y=650, x=583..593
+      x=607, y=159..176
+      x=556, y=674..686
+      y=42, x=510..534
+      */
+      
+      DO iCoordinate = 1 TO NUM-ENTRIES(cLine):
+         /* Extract coordinates */
+         ASSIGN
+            cCoordinates = TRIM (ENTRY(iCoordinate, cLine))
+            cValues      = REPLACE (ENTRY(2, cCoordinates, "="), "..", ",")
+         .
+         IF ENTRY(1, cCoordinates, "=") EQ "x" THEN DO:
+            ASSIGN
+               iX_From = INTEGER(ENTRY(1, cValues))
+               iX_To   = iX_From
+            .
+            IF NUM-ENTRIES(cValues) EQ 2 THEN DO:
+               ASSIGN
+                  iX_To = INTEGER(ENTRY(2, cValues))
+               .
+            END.
+         END.
+         IF ENTRY(1, cCoordinates, "=") EQ "y" THEN DO:
+            ASSIGN
+               iY_From = INTEGER(ENTRY(1, cValues))
+               iY_To   = iY_From
+            .
+            IF NUM-ENTRIES(cValues) EQ 2 THEN DO:
+               ASSIGN
+                  iY_To = INTEGER(ENTRY(2, cValues))
+               .
+            END.
+         END.
+      END. /* Extract coordinates */
+
+      iNewID = iNewID + 1.
+      CREATE ttClay.
+      ASSIGN
+         ttClay.iID     = iNewID
+         ttClay.iX_From = iX_From
+         ttClay.iX_To   = iX_To
+         ttClay.iY_From = iY_From
+         ttClay.iY_To   = iY_To
+      .
+   END. /* InputBlock: */
+   
+   PUBLISH "debug" (SUBSTITUTE("Process input.")).
+
+   /* Process Input */
+   FOR EACH ttClay:
+      ACCUM ttClay.iX_From (MINIMUM).
+      ACCUM ttClay.iX_To   (MAXIMUM).
+      ACCUM ttClay.iY_From (MINIMUM).
+      ACCUM ttClay.iY_To   (MAXIMUM).
+   END.
+   ASSIGN
+      iMinX = (ACCUM MINIMUM ttClay.iX_From) - 1
+      iMaxX = (ACCUM MAXIMUM ttClay.iX_To)   + 1
+      iMinY = (ACCUM MINIMUM ttClay.iY_From)
+      iMaxY = (ACCUM MAXIMUM ttClay.iY_To)
+   .
+
+   PUBLISH "debug" (SUBSTITUTE("Create board from (&1,&2) to (&3,&4).", iMinX, iMinY, iMaxX, iMaxY)).
+
+   DO iY = iMinY TO iMaxY:
+      DO iX = iMinX TO iMaxX:
+         FIND FIRST ttGround
+         WHERE ttGround.iY EQ iY
+         AND   ttGround.iX EQ iX NO-ERROR.
+         IF NOT AVAILABLE ttGround THEN DO:
+            CREATE ttGround.
+            ASSIGN
+               ttGround.iY = iY
+               ttGround.iX = iX
+            .
+            FIND FIRST ttClay
+            WHERE ttClay.iY_From LE ttGround.iY
+            AND   ttClay.iY_To   GE ttGround.iY
+            AND   ttClay.iX_From LE ttGround.iX
+            AND   ttClay.iX_To   GE ttGround.iX NO-ERROR.
+            IF AVAILABLE ttClay THEN DO:
+               ASSIGN
+                  ttGround.cType = "#"
+               .
+            END.
+            ELSE DO:
+               ASSIGN
+                  ttGround.cType = "."
+               .
+            END.
+         END.
+      END.
+   END.
+
+   PUBLISH "debug" (SUBSTITUTE("Start of water flow.")).
+
+   /* Spring of Water */
+   iNewID = iNewID + 1.
+   CREATE ttUnit.
+   ASSIGN
+      ttUnit.iID        = iNewID
+      ttUnit.iX         = 500
+      ttUnit.iY         = 0
+      ttUnit.cType      = "+"
+   .
+
+   RUN outputBoard
+      (INPUT  cFileName,
+       INPUT  0,
+       INPUT  0,
+       INPUT  iMinX,
+       INPUT  iMaxX,
+       INPUT  iMinY,
+       INPUT  iMaxY,
+       OUTPUT cOutputFile).
+
+   WaterBlock:
+   REPEAT:
+      lTransform = FALSE.
+      UnitBlock:
+      FOR EACH ttUnit
+      WHERE ttUnit.cType EQ "+":
+         /* Spring of Water */
+         ACCUM "" (COUNT).
+         FlowDownBlock:
+         FOR EACH ttGround
+         WHERE ttGround.iX EQ ttUnit.iX
+         AND   ttGround.iY GT ttUnit.iY:
+            IF ttGround.cType EQ "." THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("Transforming ground at (&1,&2) from &3 to |", ttGround.iX, ttGround.iY, ttGround.cType)).
+
+               ttGround.cType = "|".
+               lTransform = TRUE.
+            END.
+   
+            FIND  ttDown
+            WHERE ttDown.iX EQ ttGround.iX
+            AND   ttDown.iY EQ ttGround.iY + 1 NO-ERROR.
+            IF AVAILABLE ttDown THEN DO:
+               /* Found ttDown */
+               IF ttDown.cType EQ "#" 
+               OR ttDown.cType EQ "~~"
+               THEN DO:
+                  /* Found Clay or Water, look to left and right for "borders" */
+                  ASSIGN
+                     lFoundRight = FALSE
+                     lFoundLeft  = FALSE
+                     iLeftMin    = ttGround.iX
+                     iRightMax   = ttGround.iX
+                  .
+                  RightBlock:
+                  FOR EACH ttRight
+                  WHERE ttRight.iY EQ ttGround.iY
+                  AND   ttRight.iX GT ttGround.iX                                                                                                                  
+                  BY ttRight.iY
+                  BY ttRight.iX:
+                     IF CAN-FIND(ttRightDown WHERE ttRightDown.iX EQ ttRight.iX AND ttRightDown.iY EQ ttRight.iY + 1 AND (ttRightDown.cType EQ "#" OR ttRightDown.cType EQ "~~")) EQ TRUE
+                     THEN DO:
+                        IF ttRight.cType = "#" THEN DO:
+                           ASSIGN
+                              iRightMax   = ttRight.iX
+                              lFoundRight = TRUE
+                           .
+                           /* Found first Right Border */
+                           LEAVE RightBlock.
+                        END.
+                        ELSE DO:
+                           ASSIGN
+                              iRightMax = ttRight.iX
+                           .
+                        END.
+                     END.
+                     ELSE DO:
+                        LEAVE RightBlock.
+                     END.
+                  END.
+                  LeftBlock:
+                  FOR EACH ttLeft
+                  WHERE ttLeft.iY EQ ttGround.iY
+                  AND   ttLeft.iX LT ttGround.iX
+                  BY ttLeft.iY
+                  BY ttLeft.iX DESCENDING:
+                     IF CAN-FIND(ttLeftDown WHERE ttLeftDown.iX EQ ttLeft.iX AND ttLeftDown.iY EQ ttLeft.iY + 1 AND (ttLeftDown.cType EQ "#" OR ttLeftDown.cType EQ "~~")) EQ TRUE
+                     THEN DO:
+                        IF ttLeft.cType EQ "#" THEN DO:
+                           ASSIGN
+                              iLeftMin   = ttLeft.iX
+                              lFoundLeft = TRUE
+                           .
+                           /* Found first Left Border */
+                           LEAVE LeftBlock.
+                        END.
+                        ELSE DO:
+                           ASSIGN
+                              iLeftMin = ttLeft.iX
+                           .
+                        END.
+                     END.
+                     ELSE DO:
+                        LEAVE LeftBlock.
+                     END.
+                  END.
+                  IF  lFoundRight EQ TRUE
+                  AND lFoundLeft  EQ TRUE THEN DO:
+                     FOR EACH ttWater
+                     WHERE ttWater.iY EQ ttGround.iY
+                     AND   ttWater.iX GT iLeftMin
+                     AND   ttWater.iX LT iRightMax:
+                        IF ttWater.cType NE "~~" THEN DO:
+                           lTransform = TRUE.
+                           PUBLISH "nodebug" (SUBSTITUTE("Transform ground at (&1,&2) from &3 to ~~.", ttWater.iX, ttWater.iY, ttWater.cType)).
+                           IF ttWater.cType EQ "#" THEN DO:
+                              RUN outputBoard
+                                 (INPUT  cFileName,
+                                  INPUT  0,
+                                  INPUT  0,
+                                  INPUT  iMinX,
+                                  INPUT  iMaxX,
+                                  INPUT  iMinY,
+                                  INPUT  iMaxY,
+                                  OUTPUT cOutputFile).
+                              RETURN.
+                           END.
+                           ASSIGN
+                              ttWater.cType = "~~"
+                           .
+                        END.
+                     END.
+                  END. /* Clay walls */
+                  ELSE DO:
+                     /* Open Edge on Left, Right or Both */
+                     IF lFoundLeft EQ FALSE THEN DO:
+                        /* Look for edge on the Left */
+                        ASSIGN
+                           iLeftMin = iLeftMin - 1
+                        .
+                        /*
+                        LeftDownBlock:
+                        FOR EACH ttLeft
+                        WHERE ttLeft.iY EQ ttGround.iY
+                        AND   ttLeft.iX LT ttGround.iX
+                        BY ttLeft.iY
+                        BY ttLeft.iX DESCENDING:
+                           FIND  ttLeftDown
+                           WHERE ttLeftDown.iX EQ ttLeft.iX
+                           AND   ttLeftDown.iY EQ ttLeft.iY + 1 NO-ERROR.
+                           IF AVAILABLE ttLeftDown THEN DO:
+                              IF ttLeftDown.cType EQ "~~" 
+                              OR ttLeftDown.cType EQ "#"
+                              THEN DO:
+                                 ASSIGN
+                                    iLeftMin = ttLeft.iX
+                                 .
+                              END.
+                           END.
+                           ELSE DO:
+                              LEAVE LeftDownBlock.
+                           END.
+                        END.
+                        */
+                     END. /* Look for edge on the Left */
+                     ELSE DO:
+                        ASSIGN
+                           iLeftMin = iLeftMin + 1
+                        .
+                     END.
+                     IF lFoundRight EQ FALSE THEN DO:
+                        /* Look for edge on the Right */
+                        ASSIGN
+                           iRightMax = iRightMax + 1
+                        .
+                        /*
+                        RightDownBlock:
+                        FOR EACH ttRight
+                        WHERE ttRight.iY EQ ttGround.iY
+                        AND   ttRight.iX GT ttGround.iX
+                        BY ttRight.iY
+                        BY ttRight.iX:
+                           FIND  ttRightDown
+                           WHERE ttRightDown.iX EQ ttRight.iX
+                           AND   ttRightDown.iY EQ ttRight.iY + 1 NO-ERROR.
+                           IF AVAILABLE ttRightDown THEN DO:
+                              IF ttRightDown.cType EQ "~~" 
+                              OR ttRightDown.cType EQ "#"
+                              THEN DO:
+                                 ASSIGN
+                                    iRightMax = ttRight.iX
+                                 .
+                              END.
+                           END.
+                           ELSE DO:
+                              LEAVE RightDownBlock.
+                           END.
+                        END.
+                        */
+                     END. /* Look for edge on the Right */
+                     ELSE DO:
+                        ASSIGN
+                           iRightMax = iRightMax - 1
+                        .
+                     END.
+                     FOR EACH ttWet
+                     WHERE ttWet.iY EQ ttGround.iY
+                     AND   ttWet.iX GE iLeftMin
+                     AND   ttWet.iX LE iRightMax:
+                        /* Wet sand */
+                        IF  lFoundLeft EQ FALSE
+                        AND ttWet.iX EQ iLeftMin THEN DO:
+                           /* Point of Overflow on the Left */
+                           FIND  ttNewUnit 
+                           WHERE ttNewUnit.iX = ttWet.iX
+                           AND   ttNewUnit.iY = ttWet.iY NO-ERROR.
+                           IF NOT AVAILABLE ttNewUnit THEN DO:
+                              iNewID = iNewID + 1.
+                              CREATE ttNewUnit.
+                              ASSIGN
+                                 ttNewUnit.iID   = iNewID
+                                 ttNewUnit.iX    = ttWet.iX
+                                 ttNewUnit.iY    = ttWet.iY
+                                 ttNewUnit.cType = "+"
+                              .
+                           END.
+                        END.
+                        IF  lFoundRight EQ FALSE
+                        AND ttWet.iX EQ iRightMax THEN DO:
+                           FIND  ttNewUnit 
+                           WHERE ttNewUnit.iX = ttWet.iX
+                           AND   ttNewUnit.iY = ttWet.iY NO-ERROR.
+                           IF NOT AVAILABLE ttNewUnit THEN DO:
+                              iNewID = iNewID + 1.
+                              CREATE ttNewUnit.
+                              ASSIGN
+                                 ttNewUnit.iID   = iNewID
+                                 ttNewUnit.iX    = ttWet.iX
+                                 ttNewUnit.iY    = ttWet.iY
+                                 ttNewUnit.cType = "+"
+                              .
+                           END.
+                        END.
+                        IF ttWet.cType NE "|" THEN DO:
+                           PUBLISH "nodebug" (SUBSTITUTE("Transforming ground at (&1,&2) from &3 to |", ttWet.iX, ttWet.iY, ttWet.cType)).
+                           IF ttWet.cType EQ "#" THEN DO:
+                              RUN outputBoard
+                                 (INPUT  cFileName,
+                                  INPUT  0,
+                                  INPUT  0,
+                                  INPUT  iMinX,
+                                  INPUT  iMaxX,
+                                  INPUT  iMinY,
+                                  INPUT  iMaxY,
+                                  OUTPUT cOutputFile).
+                              RETURN.
+                           END.
+                           ASSIGN
+                              ttWet.cType = "|"
+                              lTransform  = TRUE
+                           .
+                        END.
+                     END. /* Wet sand */
+                  END. /* Open Edge on Left, Right or Both */
+                  LEAVE FlowDownBlock.
+               END. /* IF ttDown.cType EQ "#" THEN DO: */
+            END. /* Found ttDown */
+         END. /* FlowDownBlock */
+      END. /* Spring of Water */
+      
+/*       RUN outputBoard          */
+/*          (INPUT  cFileName,    */
+/*           INPUT  0,            */
+/*           INPUT  0,            */
+/*           INPUT  iMinX,        */
+/*           INPUT  iMaxX,        */
+/*           INPUT  iMinY,        */
+/*           INPUT  iMaxY,        */
+/*           OUTPUT cOutputFile). */
+
+      IF lTransform EQ FALSE THEN DO:
+         LEAVE WaterBlock.
+      END.
+   END. /* WaterBlock */
+
+   RUN outputBoard
+      (INPUT  cFileName,
+       INPUT  0,
+       INPUT  0,
+       INPUT  iMinX,
+       INPUT  iMaxX,
+       INPUT  iMinY,
+       INPUT  iMaxY,
+       OUTPUT cOutputFile).
+
+   FOR EACH ttGround
+   WHERE ttGround.cType EQ "~~" OR ttGround.cType EQ "|":
+      ACCUM "1" (COUNT).
+      PUBLISH "nodebug" (SUBSTITUTE("Found Ground at (&1,&2) with Type &3: #&4", ttGround.iX, ttGround.iY, ttGround.cType, (ACCUM COUNT ""))).
+      IF ttGround.cType EQ "~~" THEN DO:
+         ACCUM "2" (COUNT).
+      END.
+   END.
+
+   ASSIGN
+      opiOutput1 = (ACCUM COUNT "1")
+      opiOutput2 = (ACCUM COUNT "2")
+   .
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay18) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay18 Procedure 
+PROCEDURE getDay18 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 18: Settlers of The North Pole ---
+  Parameters:  
+  Notes:       
+  
+DEFINE TEMP-TABLE ttBoard
+   FIELD iRound AS INTEGER
+   FIELD iX     AS INTEGER
+   FIELD iY     AS INTEGER
+   /* Day 15: #=Wall, .=Empty, E=Elf, G=Goblin */
+   /* Day 17: #=Clay, .=Sand, |=water flowing ~=water settled */
+   /* Day 18: .=Open, |=Trees, #=Lumber */
+   FIELD cType  AS CHARACTER 
+INDEX indXY IS UNIQUE PRIMARY iY iX
+INDEX indRoundXY IS UNIQUE iRound iY iX.
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cOutputFile      AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iCoordinate      AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cCoordinates     AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cValues          AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iX_From          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX_To            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY_From          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY_To            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iChar            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cChar            AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug AS CHARACTER   NO-UNDO.
+
+/* Define buffers for temp-tables */
+DEFINE BUFFER ttGround    FOR ttBoard.
+DEFINE BUFFER ttUp        FOR ttBoard.
+DEFINE BUFFER ttDown      FOR ttBoard.
+DEFINE BUFFER ttRight     FOR ttBoard.
+DEFINE BUFFER ttLeft      FOR ttBoard.
+DEFINE BUFFER ttUpRight   FOR ttBoard.
+DEFINE BUFFER ttUpLeft    FOR ttBoard.
+DEFINE BUFFER ttDownRight FOR ttBoard.
+DEFINE BUFFER ttDownLeft  FOR ttBoard.
+DEFINE BUFFER ttAdjacent  FOR ttBoard.
+DEFINE BUFFER ttNewGround FOR ttBoard.
+DEFINE BUFFER ttPrevValue FOR ttValue.
+
+/* Variables for puzzle solving */
+DEFINE VARIABLE iX          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iCount      AS INTEGER     NO-UNDO EXTENT 3.
+DEFINE VARIABLE cTypeIndex  AS CHARACTER   NO-UNDO INIT ".|#".
+DEFINE VARIABLE iRound      AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxRound   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE lcBoard     AS LONGCHAR    NO-UNDO.
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   EMPTY TEMP-TABLE ttGround.
+
+   PUBLISH "debug" (SUBSTITUTE("Start load input.")).
+
+   InputBlock:
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+
+      /* Input examples:
+      **
+      .#.#...|#.
+      .....#|##|
+      .|..|...#.
+      ..|#.....#
+      #.#|||#|#|
+      ...#.||...
+      .|....|...
+      ||...#|.#|
+      |.||||..|.
+      ...#.|..|.      
+      */
+      
+      DO iChar = 1 TO LENGTH(cLine):
+         cChar = TRIM (SUBSTRING(cLine, iChar, 1)).
+         
+         IF INDEX(cTypeIndex, cChar) NE 0 THEN DO:
+            CREATE ttGround.
+            ASSIGN
+               ttGround.iRound = 0
+               ttGround.iY     = iLine
+               ttGround.iX     = iChar
+               ttGround.cType  = cChar
+            .
+         END.
+      END.
+   END. /* InputBlock: */
+   
+   PUBLISH "debug" (SUBSTITUTE("Process input.")).
+
+   /* Process Input */
+   FOR EACH ttGround:
+      ACCUM ttGround.iX (MINIMUM).
+      ACCUM ttGround.iX (MAXIMUM).
+      ACCUM ttGround.iY (MINIMUM).
+      ACCUM ttGround.iY (MAXIMUM).
+   END.
+   ASSIGN
+      iMinX = (ACCUM MINIMUM ttGround.iX)
+      iMaxX = (ACCUM MAXIMUM ttGround.iX)
+      iMinY = (ACCUM MINIMUM ttGround.iY)
+      iMaxY = (ACCUM MAXIMUM ttGround.iY)
+   .
+
+   PUBLISH "debug" (SUBSTITUTE("Create board from (&1,&2) to (&3,&4).", iMinX, iMinY, iMaxX, iMaxY)).
+
+   PUBLISH "debug" (SUBSTITUTE("Start of Changes.")).
+
+/*    RUN outputBoard          */
+/*       (INPUT  cFileName,    */
+/*        INPUT  iRound,       */
+/*        INPUT  0,            */
+/*        INPUT  iMinX,        */
+/*        INPUT  iMaxX,        */
+/*        INPUT  iMinY,        */
+/*        INPUT  iMaxY,        */
+/*        OUTPUT cOutputFile). */
+
+   IF ipiPart EQ 1 THEN DO:
+      iMaxRound = 10.
+   END.
+   ELSE DO:
+      iMaxRound = 1000000000.
+   END.
+
+   ASSIGN
+      iRound = 0
+   .
+   ChangeBlock:
+   REPEAT:
+      FOR EACH ttGround
+      WHERE ttGround.iRound EQ iRound:
+         ASSIGN
+            iCount = 0
+         .
+         FOR EACH ttAdjacent
+         WHERE ttAdjacent.iRound EQ ttGround.iRound
+         AND   ttAdjacent.iX     GE ttGround.iX - 1
+         AND   ttAdjacent.iX     LE ttGround.iX + 1
+         AND   ttAdjacent.iY     GE ttGround.iY - 1
+         AND   ttAdjacent.iY     LE ttGround.iY + 1
+         AND   ROWID(ttAdjacent) NE ROWID(ttGround):
+            ACCUM "" (COUNT).
+            PUBLISH "nodebug" (SUBSTITUTE("Round: &1 #&8 (&2,&3)=&4 (&5,&6)=&7",
+                                        iRound,
+                                        ttGround.iX,
+                                        ttGround.iY,
+                                        ttGround.cType,
+                                        ttAdjacent.iX,
+                                        ttAdjacent.iY,
+                                        ttAdjacent.cType,
+                                        (ACCUM COUNT ""))).
+            ASSIGN
+               iCount[INDEX(cTypeIndex, ttAdjacent.cType)] = 
+                  iCount[INDEX(cTypeIndex, ttAdjacent.cType)] + 1
+            .
+            PUBLISH "nodebug" (SUBSTITUTE(".=&1 |=&2 #=&3",
+                                        iCount[INDEX(cTypeIndex, ".")],
+                                        iCount[INDEX(cTypeIndex, "|")],
+                                        iCount[INDEX(cTypeIndex, "#")])).
+         END.
+         CREATE ttNewGround.
+         BUFFER-COPY ttGround TO ttNewGround
+            ASSIGN
+            ttNewGround.iRound = ttGround.iRound + 1
+         .
+         CASE ttGround.cType:
+            WHEN "." THEN DO:
+               IF iCount[INDEX(cTypeIndex, "|")] GE 3 THEN DO:
+                  ttNewGround.cType = "|".
+               END.
+            END.
+            WHEN "|" THEN DO:
+               IF iCount[INDEX(cTypeIndex, "#")] GE 3 THEN DO:
+                  ttNewGround.cType = "#".
+               END.
+            END.
+            WHEN "#" THEN DO:
+               IF  iCount[INDEX(cTypeIndex, "|")] GE 1
+               AND iCount[INDEX(cTypeIndex, "#")] GE 1 THEN DO:
+                  ttNewGround.cType = "#".
+               END.
+               ELSE DO:
+                  ttNewGround.cType = ".".
+               END.
+            END.
+         END CASE.
+
+      END.
+         
+      iRound = iRound + 1.
+      RUN outputBoard
+         (INPUT  cFileName,
+          INPUT  iRound,
+          INPUT  0,
+          INPUT  iMinX,
+          INPUT  iMaxX,
+          INPUT  iMinY,
+          INPUT  iMaxY,
+          OUTPUT cOutputFile).
+               
+      COPY-LOB 
+         FROM FILE cOutputFile
+         TO   OBJECT lcBoard.
+      
+      CREATE ttValue.
+      ASSIGN
+         ttValue.iRound = iRound
+      .
+
+      COPY-LOB FROM
+         FILE cOutputFile
+         TO   OBJECT lcBoard.
+      ASSIGN
+         ttValue.cDigest = HEX-ENCODE(MD5-DIGEST(lcBoard))
+      .
+
+      FIND FIRST ttPrevValue
+      WHERE ttPrevValue.cDigest EQ ttValue.cDigest 
+      AND   ttPrevValue.iRound  LT ttValue.iRound NO-ERROR.
+
+      IF AVAILABLE ttPrevValue THEN DO:
+         PUBLISH "debug" (SUBSTITUTE("Round: &1 eq Round &2",
+                                     ttValue.iRound,
+                                     ttPrevValue.iRound)).
+         ASSIGN
+            iRound = ((iMaxRound - ttValue.iRound) MOD (ttValue.iRound - ttPrevValue.iRound)) +
+               ttPrevValue.iRound
+         .
+         PUBLISH "debug" (SUBSTITUTE("Use round: &1", iRound)).
+         
+         ASSIGN
+            iCount = 0
+         .
+         FOR EACH ttGround
+         WHERE ttGround.iRound EQ iRound:
+            iCount[INDEX(cTypeIndex, ttGround.cType)] =
+               iCount[INDEX(cTypeIndex, ttGround.cType)] + 1.
+         END.
+         ASSIGN
+            opiOutput2 = iCount[INDEX(cTypeIndex, "|")] *
+               iCount[INDEX(cTypeIndex, "#")]
+         .
+         PUBLISH "debug" (SUBSTITUTE("Count &1=&2 &3=&4", 
+                                     "|",
+                                     iCount[INDEX(cTypeIndex, "|")],
+                                     "#",
+                                     iCount[INDEX(cTypeIndex, "#")])).
+
+         LEAVE ChangeBlock.
+      END.
+
+      IF iRound EQ iMaxRound THEN DO:
+         LEAVE ChangeBlock.
+      END.
+   END. /* ChangeBlock */
+
+
+   IF ipiPart EQ 1 THEN DO:
+      ASSIGN
+         iCount = 0
+      .
+      FOR EACH ttGround
+      WHERE ttGround.iRound EQ iRound:
+         iCount[INDEX(cTypeIndex, ttGround.cType)] =
+            iCount[INDEX(cTypeIndex, ttGround.cType)] + 1.
+      END.
+
+      ASSIGN
+         opiOutput1 = iCount[INDEX(cTypeIndex, "|")] *
+            iCount[INDEX(cTypeIndex, "#")]
+      .
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay19) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay19 Procedure 
+PROCEDURE getDay19 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 16: Chronal Classification ---
+  Parameters:  
+  Notes:       
+
+DEFINE TEMP-TABLE ttProgram
+   FIELD iLine AS INTEGER
+   FIELD cOperation AS CHARACTER
+   FIELD iA         AS INTEGER
+   FIELD iB         AS INTEGER
+   FIELD iC         AS INTEGER
+INDEX indLine IS UNIQUE iLine.
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cSection         AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cRegister        AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug      AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug      AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cDebugEvent AS CHARACTER   NO-UNDO INITIAL "nodebug".
+
+/* Variables for Calculating */
+DEFINE VARIABLE iRegisterWork AS INTEGER     NO-UNDO EXTENT 6 FORMAT "9".
+DEFINE VARIABLE cOpCode       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iOpCode       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cOpList       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lDone         AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE iRegister     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iPrevLine     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMax          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iFactor       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iSumOfFactors AS INTEGER     NO-UNDO.
+
+/* Define buffers for temp-tables */
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   EMPTY TEMP-TABLE ttProgram.
+
+   InputBlock:
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+
+      IF TRIM (cLine) EQ "" THEN DO:
+         LEAVE InputBlock.
+      END.
+
+      /* Input example:
+      **
+      #ip 0
+      seti 5 0 1
+      seti 6 0 2
+      addi 0 1 0
+      addr 1 2 3
+      setr 1 0 0
+      seti 8 0 4
+      seti 9 0 5
+      */
+      IF cLine BEGINS "#ip" THEN DO:
+         ASSIGN
+            iRegister = INTEGER(ENTRY(2, cLine, " "))
+         .
+      END.
+      ELSE DO:
+         ASSIGN
+            iNewID = iNewID + 1
+         .
+         CREATE ttProgram.
+         ASSIGN
+            ttProgram.iLine      = iNewID
+            ttProgram.cOperation = ENTRY(1, cLine, " ")
+            ttProgram.iA         = INTEGER(ENTRY(2, cLine, " "))
+            ttProgram.iB         = INTEGER(ENTRY(3, cLine, " "))
+            ttProgram.iC         = INTEGER(ENTRY(4, cLine, " "))
+         .
+      END.
+
+   END.
+   
+   /* Correct 0 based registers */
+   iRegister = iRegister + 1.
+
+   IF ipiPart EQ 2 THEN DO:
+      iRegisterWork[1] = 1.
+      cDebugEvent = "debug".
+   END.
+
+   /* Process Input */
+   ExecuteBlock:
+   REPEAT:
+      ACCUM "" (COUNT).
+      cLine = SUBSTITUTE("ip=&1 [&2, &3, &4, &5, &6, &7]",
+                         iRegisterWork[iRegister],
+                         iRegisterWork[1],
+                         iRegisterWork[2],
+                         iRegisterWork[3],
+                         iRegisterWork[4],
+                         iRegisterWork[5],
+                         iRegisterWork[6]).
+                                  
+      FIND  ttProgram
+      WHERE ttProgram.iLine EQ iRegisterWork[iRegister] + 1 NO-ERROR.
+      IF NOT AVAILABLE ttProgram THEN DO:
+
+         PUBLISH "debug" (cLine).
+
+         LEAVE ExecuteBlock.
+      END.
+      ELSE DO:
+         ASSIGN
+            ttProgram.iNrTimes = ttProgram.iNrTimes + 1
+         .
+         IF (ipiPart EQ 2 AND ttProgram.iNrTimes GE 100)
+         OR (ipiPart EQ 2 AND iPrevLine GT iRegisterWork[iRegister]) THEN DO:
+            iMax = MAXIMUM(iRegisterWork[1], iRegisterWork[2], iRegisterWork[3], iRegisterWork[4], iRegisterWork[5], iRegisterWork[6]).
+            LEAVE ExecuteBlock.
+         END.
+      END.
+      ASSIGN
+         iPrevLine = ttProgram.iLine
+      .
+
+      RUN calculate
+         (INPUT-OUTPUT iRegisterWork,
+          INPUT        ttProgram.cOperation,
+          INPUT        ttProgram.iA,
+          INPUT        ttProgram.iB,
+          INPUT        ttProgram.iC).
+      
+      PUBLISH cDebugEvent (SUBSTITUTE("&1 &2 &3 &4 &5 &6",
+                                      cLine,
+                                      ttProgram.cOperation,
+                                      ttProgram.iA,
+                                      ttProgram.iB,
+                                      ttProgram.iC,
+                                      SUBSTITUTE("[&1, &2, &3, &4, &5, &6]",
+                                                 iRegisterWork[1],
+                                                 iRegisterWork[2],
+                                                 iRegisterWork[3],
+                                                 iRegisterWork[4],
+                                                 iRegisterWork[5],
+                                                 iRegisterWork[6]))).
+      ASSIGN
+         iRegisterWork[iRegister] = iRegisterWork[iRegister] + 1
+      .
+
+   END. /* ExecutBlock */
+   
+   PUBLISH "debug" (SUBSTITUTE("Calculation: &1", (ACCUM COUNT ""))).
+
+   IF ipiPart EQ 1 THEN DO:
+      ASSIGN
+         opiOutput1 = iRegisterWork[1]
+      .
+   END.
+   ELSE DO:
+
+      ASSIGN
+         iSumOfFactors = 0
+      .
+
+      DO iFactor = 1 TO iMax:
+         IF iMax MOD iFactor EQ 0 THEN DO:
+            PUBLISH "debug" (SUBSTITUTE("Found a factor of &1: &2", iMax, iFactor)).
+            iSumOfFactors = iSumOfFactors + iFactor.
+         END.
+      END.
+
+      ASSIGN
+         opiOutput2 = iSumOfFactors
+      .
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay19_2) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay19_2 Procedure 
+PROCEDURE getDay19_2 :
+/*------------------------------------------------------------------------------
+  Purpose:     
+  Parameters:  
+  Notes:       
+  
+Addition:
+
+
+Multiplication:
+
+mulr (multiply register) stores into register C the result of multiplying register A and register B.
+Bitwise AND:
+
+banr (bitwise AND register) stores into register C the result of the bitwise AND of register A and register B.
+bani (bitwise AND immediate) stores into register C the result of the bitwise AND of register A and value B.
+Bitwise OR:
+
+borr (bitwise OR register) stores into register C the result of the bitwise OR of register A and register B.
+bori (bitwise OR immediate) stores into register C the result of the bitwise OR of register A and value B.
+Assignment:
+
+Greater-than testing:
+
+gtir (greater-than immediate/register) sets register C to 1 if value A is greater than register B. Otherwise, register C is set to 0.
+gtri (greater-than register/immediate) sets register C to 1 if register A is greater than value B. Otherwise, register C is set to 0.
+Equality testing:
+
+eqir (equal immediate/register) sets register C to 1 if value A is equal to register B. Otherwise, register C is set to 0.
+eqri (equal register/immediate) sets register C to 1 if register A is equal to value B. Otherwise, register C is set to 0.
+
+
+#ip 5
+01 addi 5 16 5
+02 seti 1 8 4
+03 seti 1 5 3
+04 mulr 4 3 1
+05 eqrr 1 2 1
+06 addr 1 5 5
+07 addi 5 1 5
+08 addr 4 0 0
+09 addi 3 1 3
+10 gtrr 3 2 1
+11 addr 5 1 5
+12 seti 2 5 5
+13 addi 4 1 4
+14 gtrr 4 2 1
+15 addr 1 5 5
+16 seti 1 2 5
+17 mulr 5 5 5
+18 addi 2 2 2
+19 mulr 2 2 2
+20 mulr 5 2 2
+21 muli 2 11 2
+22 addi 1 8 1
+23 mulr 1 5 1
+24 addi 1 18 1
+25 addr 2 1 2
+26 addr 5 0 5
+27 seti 0 7 5
+28 setr 5 0 1
+29 mulr 1 5 1
+30 addr 5 1 1
+31 mulr 5 1 1
+32 muli 1 14 1
+33 mulr 1 5 1
+34 addr 2 1 2
+35 seti 0 0 0
+36 seti 0 9 5
+  
+------------------------------------------------------------------------------*/
+
+DEFINE VARIABLE iRegisterWork AS INTEGER     NO-UNDO EXTENT  6.
+DEFINE VARIABLE iIndex        AS INTEGER     NO-UNDO INITIAL 5.
+DEFINE VARIABLE iInstruction  AS INTEGER     NO-UNDO.
+
+   ASSIGN
+      iRegisterWork[0 + 1] = 1
+   .
+
+   CalculateBlock:
+   REPEAT:
+      iInstruction = iRegisterWork[iIndex + 1] + 1.
+      CASE iInstruction:
+         WHEN 01 THEN DO:
+            /* 01 addi 5 16 5 */
+            ASSIGN
+               iRegisterWork[5 + 1] = iRegisterWork[5 + 1] + 16
+            .
+         END.
+         WHEN 18 THEN DO:
+            /* 18 addi 2 2 2 */
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[2 + 1] + 2
+            .
+         END.
+         WHEN 19 THEN DO:
+            /* 19 mulr 2 2 2 --> mulr (multiply register) stores into register C the result of multiplying register A and register B.*/
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[2 + 1] * iRegisterWork[2 + 1]
+            .
+         END.
+         WHEN 20 THEN DO:
+            /* 20 mulr 5 2 2 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[5 + 1] * iRegisterWork[2 + 1]
+            .
+         END.
+         WHEN 21 THEN DO:
+            /* 21 muli 2 11 2 --> muli (multiply immediate) stores into register C the result of multiplying register A and value B. */
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[2 + 1] * 11
+            .
+         END.
+         WHEN 22 THEN DO:
+            /* 22 addi 1 8 1 --> addi (add immediate) stores into register C the result of adding register A and value B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] + 8
+            .
+         END.
+         WHEN 23 THEN DO:
+            /* 23 mulr 1 5 1 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] * iRegisterWork[5 + 1]
+            .
+         END.
+         WHEN 24 THEN DO:
+            /* 24 addi 1 18 1 --> addi (add immediate) stores into register C the result of adding register A and value B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] + 18
+            .
+         END.
+         WHEN 25 THEN DO:
+            /* 25 addr 2 1 2 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[2 + 1] + iRegisterWork[1 + 1]
+            .
+         END.
+         WHEN 26 THEN DO:
+            /* 26 addr 5 0 5 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[5 + 1] = iRegisterWork[5 + 1] + iRegisterWork[0 + 1]
+            .
+         END.
+         WHEN 28 THEN DO:
+            /* 28 setr 5 0 1 --> setr (set register) copies the contents of register A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[5 + 1]
+            .
+         END.
+         WHEN 29 THEN DO:
+            /* 29 mulr 1 5 1 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] * iRegisterWork[5 + 1]
+            .
+         END.
+         WHEN 30 THEN DO:
+            /* 30 addr 5 1 1 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[5 + 1] + iRegisterWork[1 + 1]
+            .
+         END.
+         WHEN 31 THEN DO:
+            /* 31 mulr 5 1 1 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[5 + 1] * iRegisterWork[1 + 1]
+            .
+         END.
+         WHEN 32 THEN DO:
+            /* 32 muli 1 14 1 --> muli (multiply immediate) stores into register C the result of multiplying register A and value B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] * 14
+            .
+         END.
+         WHEN 33 THEN DO:
+            /* 33 mulr 1 5 1 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[1 + 1] * iRegisterWork[5 + 1]
+            .
+         END.
+         WHEN 34 THEN DO:
+            /* 34 addr 2 1 2 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[2 + 1] = iRegisterWork[2 + 1] + iRegisterWork[1 + 1]
+            .
+         END.
+         WHEN 35 THEN DO:
+            /* 35 seti 0 0 0 --> seti (set immediate) stores value A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[0 + 1] = 0
+            .
+            /* ip=34 [1, 10550400, 10551430, 0, 0, 34] seti 0 0 0 [0, 10550400, 10551430, 0, 0, 34] */
+         END.
+         WHEN 36 THEN DO:
+            /* 36 seti 0 9 5 --> seti (set immediate) stores value A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[5 + 1] = 0
+            .
+         END.
+         WHEN 02 THEN DO:
+            /* 02 seti 1 8 4 --> seti (set immediate) stores value A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[4 + 1] = 1
+            .
+            /* ip=1 [0, 10550400, 10551430, 0, 0, 1] seti 1 8 4 [0, 10550400, 10551430, 0, 1, 1] */
+         END.
+         WHEN 03 THEN DO:
+            /* 03 seti 1 5 3 --> seti (set immediate) stores value A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[3 + 1] = 1
+            .
+         END.
+         WHEN 04 THEN DO:
+            /* 04 mulr 4 3 1 --> mulr (multiply register) stores into register C the result of multiplying register A and register B. */
+            ASSIGN
+               iRegisterWork[1 + 1] = iRegisterWork[4 + 1] * iRegisterWork[3 + 1]
+            .
+            /* ip=3 [0, 10550400, 10551430, 1, 1, 3] mulr 4 3 1 [0, 1, 10551430, 1, 1, 3] */
+         END.
+         WHEN 05 THEN DO:
+            /* 05 eqrr 1 2 1 --> eqrr (equal register/register) sets register C to 1 if register A is equal to register B. Otherwise, register C is set to 0. */
+            IF iRegisterWork[1 + 1] EQ iRegisterWork[2 + 1] THEN DO:
+               iRegisterWork[1] = 1.
+            END.
+            ELSE DO:
+               iRegisterWork[1] = 0.
+            END.
+            /* ip=4 [0, 1, 10551430, 1, 1, 4] eqrr 1 2 1 [0, 0, 10551430, 1, 1, 4] */
+         END.
+         WHEN 06 THEN DO:
+            /* 06 addr 1 5 5 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[5 + 1] = iRegisterWork[1 + 1] + iRegisterWork[5 + 1]
+            .
+            /* ip=5 [0, 0, 10551430, 1, 1, 5] addr 1 5 5 [0, 0, 10551430, 1, 1, 5] */
+         END.
+         WHEN 07 THEN DO:
+            /* 07 addi 5 1 5 --> addi (add immediate) stores into register C the result of adding register A and value B. */
+            ASSIGN
+               iRegisterWork[5 + 1] = iRegisterWork[5 + 1] + 1
+            .
+            /* ip=6 [0, 0, 10551430, 1, 1, 6] addi 5 1 5 [0, 0, 10551430, 1, 1, 7] */
+            /* ip=6 [0, 0, 10551430, 2, 1, 6] addi 5 1 5 [0, 0, 10551430, 2, 1, 7] */
+         END.
+         WHEN 09 THEN DO:
+            /* 09 addi 3 1 3 --> addi (add immediate) stores into register C the result of adding register A and value B. */
+            ASSIGN
+               iRegisterWork[3 + 1] = iRegisterWork[3 + 1] + 1
+            .
+            /* ip=8 [0, 0, 10551430, 1, 1, 8] addi 3 1 3 [0, 0, 10551430, 2, 1, 8] */
+         END.
+         WHEN 10 THEN DO:
+            /* 10 gtrr 3 2 1 --> gtrr (greater-than register/register) sets register C to 1 if register A is greater than register B. Otherwise, register C is set to 0. */
+            IF iRegisterWork[3 + 1] GT iRegisterWork[2 + 1] THEN DO:
+               iRegisterWork[1 + 1] = 1.
+            END.
+            ELSE DO:
+               iRegisterWork[1 + 1] = 0.
+            END.
+            /* ip=9 [0, 0, 10551430, 2, 1, 9] gtrr 3 2 1 [0, 0, 10551430, 2, 1, 9] */
+         END.
+         WHEN 11 THEN DO:
+            /* 11 addr 5 1 5 --> addr (add register) stores into register C the result of adding register A and register B. */
+            ASSIGN
+               iRegisterWork[5 + 1] = iRegisterWork[5 + 1] + iRegisterWork[1 + 1]
+            .
+            /* ip=10 [0, 0, 10551430, 2, 1, 10] addr 5 1 5 [0, 0, 10551430, 2, 1, 10] */
+         END.
+         WHEN 12 THEN DO:
+            /* 12 seti 2 5 5 --> seti (set immediate) stores value A into register C. (Input B is ignored.) */
+            ASSIGN
+               iRegisterWork[5 + 1] = 2
+            .
+            /* ip=11 [0, 0, 10551430, 2, 1, 11] seti 2 5 5 [0, 0, 10551430, 2, 1, 2] */
+         END.
+         /*
+            
+            07 addi 5 1 5
+            08 addr 4 0 0
+            12 seti 2 5 5
+            13 addi 4 1 4
+            14 gtrr 4 2 1
+            15 addr 1 5 5
+            16 seti 1 2 5
+            17 mulr 5 5 5
+            27 seti 0 7 5
+
+      */
+      END CASE.
+      ASSIGN
+         iRegisterWork[iIndex + 1] = iRegisterWork[iIndex + 1] + 1
+      .
+
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay20) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay20 Procedure 
+PROCEDURE getDay20 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC2018 --- Day 20: A Regular Map ---
+  Parameters:  
+  Notes:       
+  
+  
+DEFINE TEMP-TABLE ttBoard
+   FIELD iRound AS INTEGER
+   FIELD iX     AS INTEGER
+   FIELD iY     AS INTEGER
+   /* Day 15: #=Wall, .=Empty, E=Elf, G=Goblin */
+   /* Day 17: #=Clay, .=Sand, |=water flowing ~=water settled */
+   /* Day 18: .=Open, |=Trees, #=Lumber */
+   /* Day 20: .=Room, | or - = Door, #=Wall */
+   FIELD cType  AS CHARACTER 
+INDEX indXY IS UNIQUE PRIMARY iY iX iRound
+INDEX indRoundXY IS UNIQUE iRound iY iX.
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput   AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart    AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1 AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2 AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+
+/* Variables for character read */
+DEFINE VARIABLE iChar AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cChar AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttRecords */
+DEFINE VARIABLE iNewID AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug AS CHARACTER   NO-UNDO.
+
+/* Variables for "playground" */
+DEFINE VARIABLE iMinX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxX       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMinY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMaxY       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iStartX     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iStartY     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE lOutput     AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cOutputFile AS CHARACTER   NO-UNDO.
+
+/* Variables for Rounds */
+DEFINE VARIABLE iRound       AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iParentRound AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iLastRound   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cEnemy       AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iEnemies     AS INTEGER     NO-UNDO.
+
+/* Variable for Battle */
+DEFINE VARIABLE iTargets AS INTEGER     NO-UNDO.
+
+/* Variables for Moving */
+DEFINE VARIABLE lMoveOk AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE iNewX   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE inewY   AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iPowerE AS INTEGER     NO-UNDO.
+
+/* Buffers for Temp-table */
+DEFINE BUFFER ttBoard       FOR ttBoard.
+DEFINE BUFFER ttNorth       FOR ttBoard.
+DEFINE BUFFER ttSouth       FOR ttBoard.
+DEFINE BUFFER ttEast        FOR ttBoard.
+DEFINE BUFFER ttWest        FOR ttBoard.
+DEFINE BUFFER ttNewRound    FOR ttRound.
+DEFINE BUFFER ttParentRound FOR ttRound.
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   /* Empty temp-tables */
+   EMPTY TEMP-TABLE ttBoard.
+   EMPTY TEMP-TABLE ttRound.
+   EMPTY TEMP-TABLE ttUnit.
+
+   ASSIGN
+      iRound = 0
+   .
+
+   ASSIGN
+      /* Start somewhere very positive */
+      iStartX = 10
+      iStartY = 10
+   .
+
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+      DO iChar = 1 TO LENGTH(cLine):
+         FIND  ttRound
+         WHERE ttRound.iRound EQ iRound NO-ERROR.
+         IF NOT AVAILABLE ttRound THEN DO:
+            CREATE ttRound.
+            ASSIGN
+               ttRound.iRound  = iRound
+               ttRound.iStartX = iStartX
+               ttRound.iStartY = iStartY
+               ttRound.iX      = iStartX
+               ttRound.iY      = iStartY
+            .
+         END.
+         ASSIGN
+            iStartX = ttRound.iX
+            iStartY = ttRound.iY
+         .
+         PUBLISH "debug" (SUBSTITUTE("Char #&1 = &2, Round: &3, (&4, &5)",
+                                     iChar,
+                                     cChar,
+                                     ttRound.iRound,
+                                     ttRound.iX,
+                                     ttRound.iY)).
+
+         FIND  ttBoard
+         WHERE ttBoard.iX     EQ iStartX
+         AND   ttBoard.iY     EQ iStartY 
+         AND   ttBoard.iRound EQ 0 NO-ERROR.
+         IF NOT AVAILABLE ttBoard THEN DO:
+            CREATE ttBoard.
+            ASSIGN
+               ttBoard.iX     = iStartX
+               ttBoard.iY     = iStartY
+               ttBoard.cType  = "."
+               ttBoard.iRound = 0
+            .
+         END.
+         FIND  ttNorth
+         WHERE ttNorth.iX     EQ ttBoard.iX
+         AND   ttNorth.iY     EQ ttBoard.iY - 1 
+         AND   ttNorth.iRound EQ ttBoard.iRound NO-ERROR.
+         IF NOT AVAILABLE ttNorth THEN DO:
+            CREATE ttNorth.
+            ASSIGN
+               ttNorth.iX     = ttBoard.iX
+               ttNorth.iY     = ttBoard.iY - 1
+               ttNorth.iRound = ttBoard.iRound
+               ttNorth.cType  = "#"
+            .
+         END.
+         FIND  ttSouth
+         WHERE ttSouth.iX     EQ ttBoard.iX
+         AND   ttSouth.iY     EQ ttBoard.iY + 1 
+         AND   ttSouth.iRound EQ ttBoard.iRound NO-ERROR.
+         IF NOT AVAILABLE ttSouth THEN DO:
+            CREATE ttSouth.
+            ASSIGN
+               ttSouth.iX     = ttBoard.iX
+               ttSouth.iY     = ttBoard.iY + 1
+               ttSouth.iRound = ttBoard.iRound
+               ttSouth.cType  = "#"
+            .
+         END.
+         FIND  ttEast
+         WHERE ttEast.iX     EQ ttBoard.iX + 1
+         AND   ttEast.iY     EQ ttBoard.iY 
+         AND   ttEast.iRound EQ ttBoard.iRound NO-ERROR.
+         IF NOT AVAILABLE ttEast THEN DO:
+            CREATE ttEast.
+            ASSIGN
+               ttEast.iX     = ttBoard.iX + 1
+               ttEast.iY     = ttBoard.iY
+               ttEast.iRound = ttBoard.iRound
+               ttEast.cType  = "#"
+            .
+         END.
+         FIND  ttWest
+         WHERE ttWest.iX     EQ ttBoard.iX - 1
+         AND   ttWest.iY     EQ ttBoard.iY 
+         AND   ttWest.iRound EQ ttBoard.iRound NO-ERROR.
+         IF NOT AVAILABLE ttWest THEN DO:
+            CREATE ttWest.
+            ASSIGN
+               ttWest.iX     = ttBoard.iX - 1
+               ttWest.iY     = ttBoard.iY
+               ttWest.iRound = ttBoard.iRound
+               ttWest.cType  = "#"
+            .
+         END.
+         cChar = SUBSTRING(cLine, iChar, 1).
+         IF INDEX("NSEW", cChar) NE 0 THEN DO:
+            ASSIGN
+               ttRound.cDirections = ttRound.cDirections + cChar
+            .
+         END.
+         CASE cChar:
+            WHEN "^" THEN DO:
+               ASSIGN
+                  ttBoard.cType = "X"
+               .
+               iNewID = iNewID + 1.
+               CREATE ttUnit.
+               ASSIGN
+                  ttUnit.iID    = iNewID
+                  ttUnit.iRound = 0
+                  ttUnit.iX     = ttBoard.iX
+                  ttUnit.iY     = ttBoard.iY
+                  ttUnit.cType  = "X"
+               .
+            END.
+            WHEN "N" THEN DO:
+               ASSIGN
+                  /* Door to the North */
+                  ttNorth.cType = "-"
+                  ttRound.iX    = ttNorth.iX
+                  ttRound.iY    = ttNorth.iY - 1
+               .
+            END.
+            WHEN "S" THEN DO:
+               ASSIGN
+                  /* Door to the South */
+                  ttSouth.cType = "-"
+                  ttRound.iX    = ttSouth.iX
+                  ttRound.iY    = ttSouth.iY + 1
+               .
+            END.
+            WHEN "E" THEN DO:
+               ASSIGN
+                  /* Door to the East */
+                  ttEast.cType = "|"
+                  ttRound.iX   = ttEast.iX + 1
+                  ttRound.iY   = ttEast.iY
+               .
+            END.
+            WHEN "W" THEN DO:
+               ASSIGN
+                  /* Door to the West */
+                  ttWest.cType = "|"
+                  ttRound.iX   = ttWest.iX - 1
+                  ttRound.iY   = ttWest.iY
+               .
+            END.
+            WHEN "(" THEN DO:
+               ASSIGN
+                  iParentRound = iRound
+                  iLastRound   = iLastRound + 1
+                  iRound       = iLastRound
+               .
+               CREATE ttNewRound.
+               ASSIGN
+                  ttNewRound.iRound       = iRound
+                  ttNewRound.iStartX      = ttRound.iX
+                  ttNewRound.iStartY      = ttRound.iY
+                  ttNewRound.iX           = ttRound.iX
+                  ttNewRound.iY           = ttRound.iY
+                  ttNewRound.iParentRound = iParentRound
+               .
+            END.
+            WHEN "|" THEN DO:
+               iParentRound = ttRound.iParentRound.
+               iLastRound   = iLastRound + 1.
+               iRound       = iLastRound.
+               FIND  ttRound
+               WHERE ttRound.iRound EQ iParentRound.
+               CREATE ttNewRound.
+               ASSIGN
+                  ttNewRound.iRound       = iRound
+                  ttNewRound.iStartX      = ttRound.iX
+                  ttNewRound.iStartY      = ttRound.iY
+                  ttNewRound.iX           = ttRound.iX
+                  ttNewRound.iY           = ttRound.iY
+                  ttNewRound.iParentRound = iParentRound
+               .
+            END.
+            WHEN ")" THEN DO:
+               iParentRound = ttRound.iParentRound.
+               iRound       = iParentRound.
+               FIND  ttParentRound
+               WHERE ttParentRound.iRound EQ iRound.
+               ASSIGN
+                  ttParentRound.iX = ttRound.iX
+                  ttParentRound.iY = ttRound.iY
+               .
+            END.
+         END CASE.
+      END.
+   END.
+   
+   FOR EACH ttBoard:
+      ACCUM ttBoard.iX (MINIMUM MAXIMUM).
+      ACCUM ttBoard.iY (MINIMUM MAXIMUM).
+   END.
+
+   ASSIGN
+      iMinX = (ACCUM MINIMUM ttBoard.iX)
+      iMaxX = (ACCUM MAXIMUM ttBoard.iX)
+      iMinY = (ACCUM MINIMUM ttBoard.iY)
+      iMaxY = (ACCUM MAXIMUM ttBoard.iY)
+   .
+
+   /* Fill in the Blanks */
+   DO iY = iMinY TO iMaxY:
+      DO iX = iMinX TO iMaxX:
+         FIND  ttBoard
+         WHERE ttBoard.iY     EQ iY
+         AND   ttBoard.iX     EQ iX
+         AND   ttBoard.iRound EQ 0 NO-ERROR.
+         IF NOT AVAILABLE ttBoard THEN DO:
+            CREATE ttBoard.
+            ASSIGN
+               ttBoard.iY     = iY
+               ttBoard.iX     = iX
+               ttBoard.iRound = 0
+               ttBoard.cType  = "#"
+            .
+         END.
+      END.
+   END.
+   
+   ASSIGN
+      lOutput       = TRUE
+   .
+
+   RUN outputBoard
+      (INPUT  cFileName,
+       INPUT  iRound,
+       INPUT  0,
+       INPUT  iMinX,
+       INPUT  iMaxX,
+       INPUT  iMinY,
+       INPUT  iMaxY,
+       OUTPUT cOutputFile).
+
+
+   FIND FIRST ttUnit.
+   RUN getDoors
+      (INPUT  ttUnit.iID,
+       OUTPUT lMoveOk,
+       OUTPUT opiOutput1,
+       OUTPUT opiOutput2).
 
 END PROCEDURE.
 
@@ -2215,6 +4467,339 @@ DEFINE VARIABLE cCommon     AS CHARACTER   NO-UNDO.
          END.
       END.
    END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDoors) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDoors Procedure 
+PROCEDURE getDoors :
+/*------------------------------------------------------------------------------
+  Purpose:     Gets all the doors in the playground
+  Parameters:  
+  Notes:       
+  
+DEFINE TEMP-TABLE ttPath
+   FIELD iID_From  AS INTEGER
+   FIELD iID_To    AS INTEGER
+   FIELD iX_Start  AS INTEGER
+   FIELD iY_Start  AS INTEGER
+   FIELD iX_From   AS INTEGER
+   FIELD iY_From   AS INTEGER
+   FIELD iX_To     AS INTEGER
+   FIELD iY_To     AS INTEGER
+   FIELD iDistance AS INTEGER
+INDEX indIDs      IS UNIQUE iID_From iID_To
+INDEX indNearest  IS PRIMARY iID_From iDistance iY_To iX_To
+INDEX indXY       iX_To iY_To iDistance
+INDEX indDistance iDistance iY_To iX_To.
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipiID     AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER oplMoveOk AS LOGICAL     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiDoors  AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiDoors2 AS INTEGER     NO-UNDO.
+
+DEFINE VARIABLE iDistance AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iX        AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iY        AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iNewX     AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iNewY     AS INTEGER     NO-UNDO.
+
+/* Define buffers */
+DEFINE BUFFER ttUnit     FOR ttUnit.
+DEFINE BUFFER ttBoard    FOR ttBoard.
+DEFINE BUFFER ttNorth    FOR ttBoard.
+DEFINE BUFFER ttSouth    FOR ttBoard.
+DEFINE BUFFER ttWest     FOR ttBoard.
+DEFINE BUFFER ttEast     FOR ttBoard.
+DEFINE BUFFER ttEnemy    FOR ttUnit.
+DEFINE BUFFER ttPath     FOR ttPath.
+DEFINE BUFFER ttNextPath FOR ttPath.
+
+DEFINE VARIABLE iNrNextPath AS INTEGER     NO-UNDO.
+
+   EMPTY TEMP-TABLE ttPath.
+
+   FIND  ttUnit
+   WHERE ttUnit.iID EQ ipiID.
+
+   ASSIGN
+      iDistance = 0
+   .
+
+   CREATE ttPath.
+   ASSIGN
+      ttPath.iID_From  = ipiID
+      ttPath.iID_To    = ?
+      ttPath.iX_Start  = 0
+      ttPath.iY_Start  = 0
+      ttPath.iX_From   = ttUnit.iX
+      ttPath.iY_From   = ttUnit.iY
+      ttPath.iX_To     = ttUnit.iX
+      ttPath.iY_To     = ttUnit.iY
+      ttPath.iDistance = 0
+   .
+
+   NextPathBlock:
+   REPEAT:
+      iNrNextPath = 0.
+
+      PUBLISH "debug" (SUBSTITUTE("iDistance: &1", iDistance)).
+
+      FOR EACH ttPath
+      WHERE ttPath.iID_From  EQ ipiID
+      AND   ttPath.iDistance EQ iDistance:
+         ASSIGN
+            iX = ttPath.iX_To
+            iY = ttPath.iY_To
+         .
+
+         FIND  ttBoard
+         WHERE ttBoard.iX EQ iX
+         AND   ttBoard.iY EQ iY.
+         FIND  ttNorth
+         WHERE ttNorth.iX EQ ttBoard.iX
+         AND   ttNorth.iY EQ ttBoard.iY - 1 NO-ERROR.
+         FIND  ttSouth
+         WHERE ttSouth.iX EQ ttBoard.iX
+         AND   ttSouth.iY EQ ttBoard.iY + 1 NO-ERROR.
+         FIND  ttWest
+         WHERE ttWest.iX EQ ttBoard.iX - 1
+         AND   ttWest.iY EQ ttBoard.iY NO-ERROR.
+         FIND  ttEast
+         WHERE ttEast.iX EQ ttBoard.iX + 1
+         AND   ttEast.iY EQ ttBoard.iY NO-ERROR.
+
+         PUBLISH "debug" (SUBSTITUTE("Board (&1,&2) = &3", ttBoard.iX, ttBoard.iY, ttBoard.cType)).
+
+         IF AVAILABLE ttNorth THEN DO:
+            IF ttNorth.cType NE "#" 
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttNorth.iX AND ttNextPath.iY_To EQ ttNorth.iY - 1) THEN DO:
+               PUBLISH "debug" (SUBSTITUTE("N...: (&4,&5) + &6 = (&1,&2) = &3", ttNorth.iX, ttNorth.iY, ttNorth.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttNorth.iX
+                  ttNextPath.iY_To     = ttNorth.iY - 1
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttNorth.iX
+                     ttNextPath.iY_Start = ttNorth.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+         END. /* AVAILABLE ttNorth */
+         IF AVAILABLE ttSouth THEN DO:
+
+            IF ttSouth.cType NE "#" 
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttSouth.iX AND ttNextPath.iY_To EQ ttSouth.iY + 1) THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("S....: (&4,&5) + &6 = (&1,&2) = &3", ttSouth.iX, ttSouth.iY, ttSouth.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttSouth.iX
+                  ttNextPath.iY_To     = ttSouth.iY + 1
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttSouth.iX
+                     ttNextPath.iY_Start = ttSouth.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+         END. /* AVAILABLE ttSouth */
+         IF AVAILABLE ttWest THEN DO:
+
+            IF ttWest.cType NE "#"
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttWest.iX - 1 AND ttNextPath.iY_To EQ ttWest.iY) THEN DO:
+               PUBLISH "nodebug" (SUBSTITUTE("W....: (&4,&5) + &6 = (&1,&2) = &3", ttWest.iX, ttWest.iY, ttWest.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttWest.iX - 1
+                  ttNextPath.iY_To     = ttWest.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttWest.iX
+                     ttNextPath.iY_Start = ttWest.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+         END. /* AVAILABLE ttWest */
+         IF AVAILABLE ttEast THEN DO:
+            PUBLISH "nodebug" (SUBSTITUTE("Right: (&4,&5) + &6 = (&1,&2) = &3", ttEast.iX, ttEast.iY, ttEast.cType, ttBoard.iX, ttBoard.iY, iDistance)).
+
+            IF ttEast.cType NE "#"
+            AND NOT CAN-FIND (ttNextPath WHERE ttNextPath.iX_To EQ ttEast.iX + 1 AND ttNextPath.iY_To EQ ttEast.iY) THEN DO:
+               CREATE ttNextPath.
+               ASSIGN
+                  ttNextPath.iID_From  = ipiID
+                  ttNextPath.iID_To    = ?
+                  ttNextPath.iX_From   = ttPath.iX_From
+                  ttNextPath.iY_From   = ttPath.iY_From
+                  ttNextPath.iX_To     = ttEast.iX + 1
+                  ttNextPath.iY_To     = ttEast.iY
+                  ttNextPath.iDistance = ttPath.iDistance + 1
+               .
+               IF ttNextPath.iDistance EQ 1 THEN DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttEast.iX
+                     ttNextPath.iY_Start = ttEast.iY
+                  .
+               END.
+               ELSE DO:
+                  ASSIGN
+                     ttNextPath.iX_Start = ttPath.iX_Start
+                     ttNextPath.iY_Start = ttPath.iY_Start
+                  .
+               END.
+               iNrNextPath = iNrNextPath + 1.
+            END.
+         END. /* AVAILABLE ttEast */
+
+      END. /*  FOR EACH ttPath WHERE ttPath.iDistance EQ iDistance: */
+
+      IF iNrNextPath EQ 0 THEN DO:
+         oplMoveOk = FALSE.
+         LEAVE NextPathBlock.
+      END.
+      ELSE DO:
+         oplMoveOk = TRUE.
+         iDistance = iDistance + 1.
+      END.
+
+   END. /* NextPathBlock */
+
+   FOR EACH ttPath
+   BY ttPath.iDistance DESCENDING:
+      ACCUM "" (COUNT).
+      IF (ACCUM COUNT "") EQ 1 THEN DO:
+         ASSIGN
+            opiDoors = ttPath.iDistance
+         .
+      END.
+      IF ttPath.iDistance GE 1000 THEN DO:
+         ASSIGN
+            opiDoors2 = (ACCUM COUNT "")
+         .
+      END.
+
+      IF ttPath.iDistance LT 1000 THEN DO:
+         LEAVE.
+      END.
+   END.
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getEnemies) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getEnemies Procedure 
+PROCEDURE getEnemies :
+/*------------------------------------------------------------------------------
+  Purpose:     
+  Parameters:  
+  Notes:       
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipiID      AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipcEnemy   AS CHARACTER   NO-UNDO.
+DEFINE OUTPUT PARAMETER opiEnemies AS INTEGER     NO-UNDO.
+
+/* Buffers for Temp-table */
+DEFINE BUFFER ttBoard FOR ttBoard.
+DEFINE BUFFER ttUp    FOR ttBoard.
+DEFINE BUFFER ttDown  FOR ttBoard.
+DEFINE BUFFER ttLeft  FOR ttBoard.
+DEFINE BUFFER ttRight FOR ttBoard.
+DEFINE BUFFER ttUnit  FOR ttUnit.
+DEFINE BUFFER ttEnemy FOR ttUnit.
+
+   ASSIGN
+      opiEnemies = 0
+   .
+   FIND ttUnit
+   WHERE ttUnit.iID EQ ipiID.
+
+   FIND  ttBoard
+   WHERE ttBoard.iX EQ ttUnit.iX
+   AND   ttBoard.iY EQ ttUnit.iY.
+   FIND  ttUp
+   WHERE ttUp.iX EQ ttBoard.iX
+   AND   ttUp.iY EQ ttBoard.iY - 1 NO-ERROR.
+   FIND  ttDown
+   WHERE ttDown.iX EQ ttBoard.iX
+   AND   ttDown.iY EQ ttBoard.iY + 1 NO-ERROR.
+   FIND  ttLeft
+   WHERE ttLeft.iX EQ ttBoard.iX - 1
+   AND   ttLeft.iY EQ ttBoard.iY NO-ERROR.
+   FIND  ttRight
+   WHERE ttRight.iX EQ ttBoard.iX + 1
+   AND   ttRight.iY EQ ttBoard.iY NO-ERROR.
+
+   PUBLISH "nodebug" (SUBSTITUTE("Board (&1,&2): &3", ttBoard.iX, ttBoard.iY, ttBoard.cType)).
+
+   /* Decide what to do */
+   IF AVAILABLE ttUp AND ttUp.cType EQ ipcEnemy THEN DO:
+      opiEnemies = opiEnemies + 1.
+   END.
+   IF AVAILABLE ttDown AND ttDown.cType EQ ipcEnemy THEN DO:
+      opiEnemies = opiEnemies + 1.
+   END.
+   IF AVAILABLE ttLeft AND ttLeft.cType EQ ipcEnemy THEN DO:
+      opiEnemies = opiEnemies + 1.
+   END.
+   IF AVAILABLE ttRight AND ttRight.cType EQ ipcEnemy THEN DO:
+      opiEnemies = opiEnemies + 1.
+   END.
+   
+   PUBLISH "nodebug" (SUBSTITUTE("Unit ID&1 (&2,&3) &4 &5 &6: Enemies: &7", ttUnit.iID, ttUnit.iX, ttUnit.iY, ttUnit.cType, ttUnit.iHitPoints, ttUnit.iPower, opiEnemies)). 
 
 END PROCEDURE.
 
@@ -3860,7 +6445,7 @@ PROCEDURE getTT :
   Parameters:  
   Notes:       
 ------------------------------------------------------------------------------*/
-DEFINE OUTPUT PARAMETER TABLE FOR ttUnit.
+DEFINE OUTPUT PARAMETER TABLE FOR ttPath.
 
 END PROCEDURE.
 
@@ -3892,20 +6477,26 @@ DEFINE VARIABLE iY          AS INTEGER     NO-UNDO.
 DEFINE VARIABLE cLine       AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE cChar       AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE cPoints     AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cFullBoard  AS LONGCHAR    NO-UNDO.
+
+   lviFileNumber = lviFileNumber + 1.
 
    opcOutputFile = SUBSTITUTE("&1_&2.txt",
                               SUBSTRING(ipcFileName, 1, R-INDEX(ipcFilename, ".") - 1),
+                              STRING(lviFileNumber, "999999"),
                               STRING(ipiRound * 100 + ipiUnit, "99999999")).
+   
+   PUBLISH "nodebug" (SUBSTITUTE("After &1 minutes.", ipiRound)).
+   
    OUTPUT TO VALUE(opcOutputFile).
-   PUT UNFORMATTED 
-      SUBSTITUTE("After &1 rounds:", ipiRound) SKIP.
 
    DO iY = ipiMinY TO ipiMaxY:
       cLine = "".
       DO iX = ipiMinX TO ipiMaxX:
          FIND  ttBoard
-         WHERE ttBoard.iX EQ iX
-         AND   ttBoard.iY EQ iY NO-ERROR.
+         WHERE ttBoard.iRound EQ ipiRound
+         AND   ttBoard.iX     EQ iX
+         AND   ttBoard.iY     EQ iY NO-ERROR.
          IF AVAILABLE ttBoard THEN DO:
             cChar = ttBoard.cType.
          END.
@@ -3914,21 +6505,37 @@ DEFINE VARIABLE cPoints     AS CHARACTER   NO-UNDO.
          END.
          cLine = SUBSTITUTE("&1&2", cLine, cChar).
       END.
+
+      /*
       FOR EACH ttUnit
       WHERE ttUnit.iY EQ iY
       BY ttUnit.iX:
-         cLine = SUBSTITUTE("&1 &2(&3)",cLine, ttUnit.cType, ttUnit.iHitPoints).
+         ACCUM "" (COUNT).
+         IF (ACCUM COUNT "") EQ 1 THEN DO:
+            cFullBoard = cFullBoard + "   ".
+         END.
+         ELSE DO:
+            cFullBoard = cFullBoard + ", ".
+         END.
+         cFullBoard = SUBSTITUTE("&1&2(&3)",
+                                 cFullBoard, ttUnit.cType, ttUnit.iHitPoints).
       END.
-
-      PUBLISH "debug" (OUTPUT cLine).
+      */
       PUT UNFORMATTED
          cLine SKIP.
+      PUBLISH "debug" (cLine).
+
+/*       cFullBoard = SUBSTITUTE("&1&2&3",                                */
+/*                               cFullBoard,                              */
+/*                               (IF cFullBoard NE "" THEN "~n" ELSE ""), */
+/*                               cLine).                                  */
+
    END.
    PUT UNFORMATTED 
       SKIP(1).
    OUTPUT CLOSE.
    
-   PUBLISH "debug" (SUBSTITUTE("FILE:&1", opcOutputFile)).
+   PUBLISH "debug" ("~n").
 
 END PROCEDURE.
 
@@ -4082,6 +6689,210 @@ END PROCEDURE.
 &ENDIF
 
 /* ************************  Function Implementations ***************** */
+
+&IF DEFINED(EXCLUDE-getBinary) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION getBinary Procedure 
+FUNCTION getBinary RETURNS CHARACTER
+(  /* parameter-definitions */ 
+   INPUT ipiNumber AS INTEGER   
+) :
+/*------------------------------------------------------------------------------
+  Purpose:  
+    Notes:  
+------------------------------------------------------------------------------*/
+DEFINE VARIABLE cBinary AS CHARACTER   NO-UNDO.
+
+   DO WHILE ipiNumber GT 0:
+      cBinary = STRING(ipiNumber MOD 2) + cBinary.
+      ipiNumber = TRUNCATE(ipiNumber / 2, 0).
+   END.
+
+   RETURN cBinary.
+
+END FUNCTION.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getBitOperation) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION getBitOperation Procedure 
+FUNCTION getBitOperation RETURNS INTEGER
+(  /* parameter-definitions */ 
+   INPUT ipiNumber1   AS INTEGER,
+   INPUT ipcOperation AS CHARACTER,
+   INPUT ipiNumber2   AS INTEGER
+) :
+/*------------------------------------------------------------------------------
+  Purpose:  
+    Notes:  
+------------------------------------------------------------------------------*/
+DEFINE VARIABLE cBinary1 AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cBinary2 AS CHARACTER   NO-UNDO.
+
+DEFINE VARIABLE iBit    AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cBit1   AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cBit2   AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cResult AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iResult AS INTEGER     NO-UNDO.
+
+   ASSIGN
+      cBinary1 = getBinary(ipiNumber1)
+      cBinary2 = getBinary(ipiNumber2)
+   .
+   IF LENGTH(cBinary1) LT LENGTH(cBinary2) THEN DO:
+      cBinary1 = FILL("0", LENGTH(cBinary2) - LENGTH(cBinary1)) + cBinary1.
+   END.
+   IF LENGTH(cBinary1) GT LENGTH(cBinary2) THEN DO:
+      cBinary2 = FILL("0", LENGTH(cBinary1) - LENGTH(cBinary2)) + cBinary2.
+   END.
+
+   DO iBit = 1 TO LENGTH(cBinary1):
+      ASSIGN
+         cBit1 = SUBSTRING(cBinary1, iBit, 1)
+         cBit2 = SUBSTRING(cBinary2, iBit, 1)
+      .
+
+      CASE ipcOperation:
+         WHEN "AND" THEN DO:
+            IF  cBit1 EQ "1"
+            AND cBit2 EQ "1" THEN DO:
+               cResult = SUBSTITUTE("&1&2", cResult, "1").
+            END.
+            ELSE DO:
+               cResult = SUBSTITUTE("&1&2", cResult, "0").
+            END.
+            
+         END.
+         WHEN "OR" THEN DO:
+            IF cBit1 EQ "1"
+            OR cBit2 EQ "1" THEN DO:
+               cResult = SUBSTITUTE("&1&2", cResult, "1").
+            END.
+            ELSE DO:
+               cResult = SUBSTITUTE("&1&2", cResult, "0").
+            END.
+            
+         END.
+      END CASE.
+   END.
+
+   DO iBit = 1 TO LENGTH(cResult):
+      IF SUBSTRING(cResult, iBit, 1) EQ "1" THEN DO:
+         iResult = iResult + EXP(2, LENGTH(cResult) - iBit).
+      END.
+   END.
+
+   RETURN iResult.
+
+END FUNCTION.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDescription) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION getDescription Procedure 
+FUNCTION getDescription RETURNS CHARACTER
+(  /* parameter-definitions */ 
+   INPUT ipiDayNr AS INTEGER   
+) :
+/*------------------------------------------------------------------------------
+  Purpose:     Returns name of the Day
+  Parameters:  
+  Notes:       
+------------------------------------------------------------------------------*/
+
+   CASE ipiDayNr:
+      WHEN 01 THEN DO:
+         RETURN "--- Day 1: Chronal Calibration ---".
+      END.
+      WHEN 02 THEN DO:
+         RETURN "--- Day 2: Inventory Management System ---".
+      END.
+      WHEN 03 THEN DO:
+         RETURN "--- Day 3: No Matter How You Slice It ---".
+      END.
+      WHEN 04 THEN DO:
+         RETURN "--- Day 4: Repose Record ---".
+      END.
+      WHEN 05 THEN DO:
+         RETURN "--- Day 5: Alchemical Reduction ---".
+      END.
+      WHEN 06 THEN DO:
+         RETURN "--- Day 6: Chronal Coordinates ---".
+      END.
+      WHEN 07 THEN DO:
+         RETURN "--- Day 7: The Sum of Its Parts ---".
+      END.
+      WHEN 08 THEN DO:
+         RETURN "--- Day 8: Memory Maneuver ---".
+      END.
+      WHEN 09 THEN DO:
+         RETURN "--- Day 9: Marble Mania ---".
+      END.
+      WHEN 10 THEN DO:
+         RETURN "--- Day 10: The Stars Align ---".
+      END.
+      WHEN 11 THEN DO:
+         RETURN "--- Day 11: Chronal Charge ---".
+      END.
+      WHEN 12 THEN DO:
+         RETURN "--- Day 12: Subterranean Sustainability ---".
+      END.
+      WHEN 13 THEN DO:
+         RETURN "--- Day 13: Mine Cart Madness ---".
+      END.
+      WHEN 14 THEN DO:
+         RETURN "--- Day 14: Chocolate Charts ---".
+      END.
+      WHEN 15 THEN DO:
+         RETURN "--- Day 15: Beverage Bandits ---".
+      END.
+      WHEN 16 THEN DO:
+         RETURN "--- Day 16: Chronal Classification ---".
+      END.
+      WHEN 17 THEN DO:
+         RETURN "--- Day 17: Reservoir Research ---".
+      END.
+      WHEN 18 THEN DO:
+         RETURN "--- Day 18: Settlers of The North Pole ---".
+      END.
+      WHEN 19 THEN DO:
+         RETURN "--- Day 19: Go With The Flow ---".
+      END.
+      WHEN 20 THEN DO:
+         RETURN "--- Day 20: A Regular Map ---".
+      END.
+      WHEN 21 THEN DO:
+         RETURN "--- Day 21: Chronal Conversion ---".
+      END.
+      WHEN 22 THEN DO:
+         RETURN "--- Day 22: Mode Maze ---".
+      END.
+      WHEN 23 THEN DO:
+         RETURN "--- Day 23: Experimental Emergency Teleportation ---".
+      END.
+      WHEN 24 THEN DO:
+         RETURN "--- Day 24: Immune System Simulator 20XX ---".
+      END.
+      WHEN 25 THEN DO:
+         RETURN "--- Day 25: Four-Dimensional Adventure ---".
+      END.
+
+   END CASE.
+
+END FUNCTION.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
 
 &IF DEFINED(EXCLUDE-getNodeValue) = 0 &THEN
 
