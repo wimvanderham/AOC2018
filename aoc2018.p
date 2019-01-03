@@ -291,13 +291,17 @@ INDEX indRound IS UNIQUE iRound.
 
 /* --- Day 19: Go With The Flow --- */
 DEFINE TEMP-TABLE ttProgram
-   FIELD iLine AS INTEGER
+   FIELD iLine      AS INTEGER
+   /* Day 21: Add field to insert shortcut calculations */
+   FIELD iSub       AS INTEGER
    FIELD cOperation AS CHARACTER
-   FIELD iA         AS INTEGER
-   FIELD iB         AS INTEGER
-   FIELD iC         AS INTEGER
+   FIELD iA         AS INT64
+   FIELD iB         AS INT64
+   FIELD iC         AS INT64
+   FIELD iRegisterC AS INT64 FORMAT "zzzzzzzzzzz9"
    FIELD iNrTimes   AS INTEGER
-INDEX indLine IS UNIQUE iLine.
+   FIELD iSequence  AS INTEGER EXTENT 100 FORMAT "zzz" COLUMN-LABEL "S"
+INDEX indLine IS UNIQUE iLine iSub.
 
 /* --- Day 20: A Regular Map --- */
 DEFINE TEMP-TABLE ttRound
@@ -309,6 +313,16 @@ DEFINE TEMP-TABLE ttRound
    FIELD iParentRound AS INTEGER
    FIELD cDirections  AS CHARACTER FORMAT "X(80)"
 INDEX indRound IS UNIQUE iRound.
+
+/* --- Day 21: Chronal Conversion --- */
+DEFINE TEMP-TABLE ttRegister
+   FIELD iLine           AS INTEGER
+   FIELD iRegister       AS INTEGER
+   FIELD iCalculation    AS INT64   FORMAT "zzzzzzzzzzzzzzz"
+   FIELD iValue          AS INT64   FORMAT "zzzzzzzzzzzzzzz"
+   FIELD iNrInstructions AS INT64   FORMAT "zzzzzzzzzzzzzzz"
+INDEX indValue IS PRIMARY iValue
+INDEX indInstruction iCalculation.
 
 /* _UIB-CODE-BLOCK-END */
 &ANALYZE-RESUME
@@ -334,7 +348,7 @@ INDEX indRound IS UNIQUE iRound.
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION-FORWARD getBinary Procedure 
 FUNCTION getBinary RETURNS CHARACTER
 (  /* parameter-definitions */ 
-   INPUT ipiNumber AS INTEGER   
+   INPUT ipiNumber AS INT64   
 )  FORWARD.
 
 /* _UIB-CODE-BLOCK-END */
@@ -347,9 +361,9 @@ FUNCTION getBinary RETURNS CHARACTER
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION-FORWARD getBitOperation Procedure 
 FUNCTION getBitOperation RETURNS INTEGER
 (  /* parameter-definitions */ 
-   INPUT ipiNumber1   AS INTEGER,
+   INPUT ipiNumber1   AS INT64,
    INPUT ipcOperation AS CHARACTER,
-   INPUT ipiNumber2   AS INTEGER
+   INPUT ipiNumber2   AS INT64
 )  FORWARD.
 
 /* _UIB-CODE-BLOCK-END */
@@ -556,13 +570,19 @@ Equality testing:
 eqir (equal immediate/register) sets register C to 1 if value A is equal to register B. Otherwise, register C is set to 0.
 eqri (equal register/immediate) sets register C to 1 if register A is equal to value B. Otherwise, register C is set to 0.
 eqrr (equal register/register) sets register C to 1 if register A is equal to register B. Otherwise, register C is set to 0.
-  
+
+Addede new operators:
+modi = MOD immediate Register C = Register A mod Value B
+modr = MOD Register  Register C = Register A mod Register B
+
+divi = DIVIDE immediate Register C = Register A / Value B (TRUNCATE to 0 decimals, NO ROUNDING)
+divr = DIVIDE Register  Register C = Register A / Register B (Truncated, NO rounding)  
 ------------------------------------------------------------------------------*/
-DEFINE INPUT-OUTPUT PARAMETER ppiRegister AS INTEGER     NO-UNDO EXTENT 6.
-DEFINE INPUT        PARAMETER ipcOpcode   AS CHARACTER   NO-UNDO.
-DEFINE INPUT        PARAMETER ipiA        AS INTEGER     NO-UNDO.
-DEFINE INPUT        PARAMETER ipiB        AS INTEGER     NO-UNDO.
-DEFINE INPUT        PARAMETER ipiC        AS INTEGER     NO-UNDO.
+DEFINE INPUT-OUTPUT PARAMETER ppiRegister AS INT64     NO-UNDO EXTENT 6.
+DEFINE INPUT        PARAMETER ipcOpcode   AS CHARACTER NO-UNDO.
+DEFINE INPUT        PARAMETER ipiA        AS INT64     NO-UNDO.
+DEFINE INPUT        PARAMETER ipiB        AS INT64     NO-UNDO.
+DEFINE INPUT        PARAMETER ipiC        AS INT64     NO-UNDO.
 
    CASE ipcOpcode:
       WHEN "addr" THEN DO:
@@ -663,8 +683,27 @@ DEFINE INPUT        PARAMETER ipiC        AS INTEGER     NO-UNDO.
             ppiRegister[ipiC + 1] = 0.
          END.
       END.
+      WHEN "modi" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] MOD ipiB
+         .
+      END.
+      WHEN "modr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = ppiRegister[ipiA + 1] MOD ppiRegister[ipiB + 1]
+         .
+      END.
+      WHEN "divi" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = INT64(TRUNCATE(ppiRegister[ipiA + 1] / ipiB, 0))
+         .
+      END.
+      WHEN "divr" THEN DO:
+         ASSIGN
+            ppiRegister[ipiC + 1] = INT64(TRUNCATE(ppiRegister[ipiA + 1] / ppiRegister[ipiB + 1], 0))
+         .
+      END.
    END CASE.
-
 
 END PROCEDURE.
 
@@ -3438,10 +3477,6 @@ DEFINE VARIABLE lcBoard     AS LONGCHAR    NO-UNDO.
           INPUT  iMaxY,
           OUTPUT cOutputFile).
                
-      COPY-LOB 
-         FROM FILE cOutputFile
-         TO   OBJECT lcBoard.
-      
       CREATE ttValue.
       ASSIGN
          ttValue.iRound = iRound
@@ -4381,6 +4416,314 @@ DEFINE BUFFER ttParentRound FOR ttRound.
        OUTPUT lMoveOk,
        OUTPUT opiOutput1,
        OUTPUT opiOutput2).
+
+END PROCEDURE.
+
+/* _UIB-CODE-BLOCK-END */
+&ANALYZE-RESUME
+
+&ENDIF
+
+&IF DEFINED(EXCLUDE-getDay21) = 0 &THEN
+
+&ANALYZE-SUSPEND _UIB-CODE-BLOCK _PROCEDURE getDay21 Procedure 
+PROCEDURE getDay21 :
+/*------------------------------------------------------------------------------
+  Purpose:     Solve AOC 2018 --- Day 21: Chronal Conversion ---
+  Parameters:  
+  Notes:       
+
+/* --- Day 19: Go With The Flow --- */
+DEFINE TEMP-TABLE ttProgram
+   FIELD iLine      AS INTEGER
+   /* Day 21: Add field to insert shortcut calculations */
+   FIELD iSub       AS INTEGER
+   FIELD cOperation AS CHARACTER
+   FIELD iA         AS INT64
+   FIELD iB         AS INT64
+   FIELD iC         AS INT64
+   FIELD iRegisterC AS INT64 FORMAT "zzzzzzzzzzz9"
+   FIELD iNrTimes   AS INTEGER
+   FIELD iSequence  AS INTEGER EXTENT 100 FORMAT "zzz" COLUMN-LABEL "S"
+INDEX indLine IS UNIQUE iLine iSub.
+
+DEFINE TEMP-TABLE ttRegister
+   FIELD iLine           AS INTEGER
+   FIELD iRegister       AS INTEGER
+   FIELD iCalculation    AS INT64
+   FIELD iValue          AS INT64
+   FIELD iNrInstructions AS INT64
+INDEX indValue IS PRIMARY iValue.
+
+------------------------------------------------------------------------------*/
+DEFINE INPUT  PARAMETER ipcInput     AS CHARACTER   NO-UNDO.
+DEFINE INPUT  PARAMETER ipiPart      AS INTEGER     NO-UNDO.
+DEFINE INPUT  PARAMETER ipiRegister0 AS INTEGER     NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput1   AS INT64       NO-UNDO.
+DEFINE OUTPUT PARAMETER opiOutput2   AS INT64       NO-UNDO.
+
+/* Variables for handling of the puzzle input */
+DEFINE VARIABLE cFileName        AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lcInput          AS LONGCHAR NO-UNDO.
+DEFINE VARIABLE iLine            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cLine            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cSection         AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cRegister        AS CHARACTER   NO-UNDO.
+
+/* Variable for creating of ttProgram */
+DEFINE VARIABLE iNewID  AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iNewSub AS INTEGER     NO-UNDO.
+
+/* Variable for Debugging */
+DEFINE VARIABLE lDebug      AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE cDebug      AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE cDebugEvent AS CHARACTER   NO-UNDO INITIAL "nodebug".
+
+/* Variables for Calculating */
+DEFINE VARIABLE iRegisterWork      AS INT64       NO-UNDO EXTENT 6 FORMAT "9".
+DEFINE VARIABLE cOpCode            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE iOpCode            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE cOpList            AS CHARACTER   NO-UNDO.
+DEFINE VARIABLE lDone              AS LOGICAL     NO-UNDO.
+DEFINE VARIABLE iRegister          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iPrevLine          AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iMax               AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iCalculation       AS INT64       NO-UNDO.
+DEFINE VARIABLE iFollowRegister    AS INTEGER     NO-UNDO INITIAL 1.
+DEFINE VARIABLE iFollowInstruction AS INTEGER     NO-UNDO INITIAL 28.
+DEFINE VARIABLE iStopInstruction   AS INTEGER     NO-UNDO INITIAL -23.
+DEFINE VARIABLE iNrStop            AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iDoubleValue       AS INTEGER     NO-UNDO.
+
+/* Define buffers for temp-tables */
+DEFINE BUFFER bttRegister  FOR ttRegister.
+DEFINE BUFFER ttSubProgram FOR ttProgram.
+
+   FILE-INFO:FILE-NAME = ipcInput.
+   IF FILE-INFO:FILE-TYPE NE ? THEN DO:
+      cFileName = FILE-INFO:FULL-PATHNAME.
+      COPY-LOB 
+         FROM FILE file-info:FULL-PATHNAME 
+         TO   OBJECT lcInput
+      .
+   END.
+   ELSE DO:
+      lcInput = ipcInput.
+   END.
+
+   /* Emply Temp-tables */
+   EMPTY TEMP-TABLE ttProgram.
+   EMPTY TEMP-TABLE ttRegister.
+
+   InputBlock:
+   DO iLine = 1 TO NUM-ENTRIES(lcInput, "~n"):
+      cLine = ENTRY(iLine, lcInput, "~n").
+
+      IF TRIM (cLine) EQ "" THEN DO:
+         LEAVE InputBlock.
+      END.
+
+      /* Input example:
+      **
+      #ip 0
+      seti 5 0 1
+      seti 6 0 2
+      addi 0 1 0
+      addr 1 2 3
+      setr 1 0 0
+      seti 8 0 4
+      seti 9 0 5
+      */
+      IF cLine BEGINS "#ip" THEN DO:
+         ASSIGN
+            iRegister = INTEGER(ENTRY(2, cLine, " "))
+         .
+      END.
+      ELSE DO:
+         IF cLine BEGINS "#sub" THEN DO:
+            /* New Sub line */
+            ASSIGN
+               iNewSub = iNewSub + 1
+               cLine   = SUBSTRING(cLine, INDEX(cLine, " ") + 1)
+            .
+         END.
+         ELSE DO:
+            /* New Program Line */
+            ASSIGN
+               iNewID  = iNewID + 1
+               iNewSub = 0
+            .
+         END.
+         CREATE ttProgram.
+         ASSIGN
+            ttProgram.iLine      = iNewID - 1 /* Fix 0 based counting */
+            ttProgram.iSub       = iNewSub
+            ttProgram.cOperation = ENTRY(1, cLine, " ")
+            ttProgram.iA         = INTEGER(ENTRY(2, cLine, " "))
+            ttProgram.iB         = INTEGER(ENTRY(3, cLine, " "))
+            ttProgram.iC         = INTEGER(ENTRY(4, cLine, " "))
+         .
+      END.
+
+   END.
+   
+   /* Correct 0 based registers */
+   iRegister = iRegister + 1.
+
+   ASSIGN
+      iRegisterWork[0 + 1] = ipiRegister0
+   .
+
+   /* Process Input */
+   ExecuteBlock:
+   REPEAT:
+      iCalculation = iCalculation + 1.
+
+      cLine = SUBSTITUTE("ip=&1 [&2, &3, &4, &5, &6, &7]",
+                         iRegisterWork[iRegister],
+                         iRegisterWork[1],
+                         iRegisterWork[2],
+                         iRegisterWork[3],
+                         iRegisterWork[4],
+                         iRegisterWork[5],
+                         iRegisterWork[6]).
+                                  
+      FIND  ttProgram
+      WHERE ttProgram.iLine EQ iRegisterWork[iRegister] 
+      AND   ttProgram.iSub  EQ 0 NO-ERROR.
+      IF NOT AVAILABLE ttProgram THEN DO:
+
+         PUBLISH "debug" (SUBSTITUTE ("&1 N/A", cLine)).
+
+         LEAVE ExecuteBlock.
+      END.
+      ELSE DO:
+
+         ASSIGN
+            ttProgram.iNrTimes = ttProgram.iNrTimes + 1
+         .
+
+         IF iCalculation LE 100 THEN DO:
+            ASSIGN
+               ttProgram.iSequence[iCalculation] = ttProgram.iNrTimes
+            .
+         END.
+
+         IF ttProgram.iNrTimes MOD 1000000 EQ 0 THEN DO:
+            PUBLISH "nodebug" (SUBSTITUTE("ip=&1 &2", ttProgram.iLine, ttProgram.iNrTimes)).
+         END.
+
+         IF  ipiPart EQ 1 
+         AND ttProgram.iNrTimes GE 10000000 THEN DO:
+            PUBLISH "debug" (INPUT SUBSTITUTE("&1 1M", cLine)).
+
+            LEAVE ExecuteBlock.
+         END.
+
+      END.
+      ASSIGN
+         iPrevLine = ttProgram.iLine
+      .
+
+      FOR EACH ttSubProgram
+      WHERE ttSubProgram.iLine EQ ttProgram.iLine:
+
+         IF ttSubProgram.iSub GT 0 THEN DO:
+            cLine = SUBSTITUTE("ip=&1&8 [&2, &3, &4, &5, &6, &7]",
+                               iRegisterWork[iRegister],
+                               iRegisterWork[1],
+                               iRegisterWork[2],
+                               iRegisterWork[3],
+                               iRegisterWork[4],
+                               iRegisterWork[5],
+                               iRegisterWork[6],
+                               (IF ttSubProgram.iSub NE 0 THEN SUBSTITUTE("[&1]", ttSubProgram.iSub) ELSE "")).
+         END.
+
+         RUN calculate
+            (INPUT-OUTPUT iRegisterWork,
+             INPUT        ttSubProgram.cOperation,
+             INPUT        ttSubProgram.iA,
+             INPUT        ttSubProgram.iB,
+             INPUT        ttSubProgram.iC).
+      
+         IF ttProgram.iLine EQ iFollowInstruction THEN DO:
+            CREATE ttRegister.
+            ASSIGN
+               ttRegister.iLine           = ttProgram.iLine
+               ttRegister.iValue          = iRegisterWork[iFollowRegister + 1]
+               ttRegister.iRegister       = ttProgram.iC
+               ttRegister.iCalculation    = iCalculation
+               ttRegister.iNrInstructions = ttProgram.iNrTimes
+            .
+            PUBLISH "debug" (SUBSTITUTE("&1 Register&2=&3, Instruction=&4", cLine, iFollowRegister, iRegisterWork[iFollowRegister + 1], iCalculation)).
+   
+            FIND FIRST bttRegister 
+            WHERE bttRegister.iValue EQ iRegisterWork[iFollowRegister + 1] 
+            AND   ROWID(bttRegister) NE ROWID(ttRegister) NO-ERROR.
+            IF AVAILABLE bttRegister THEN DO:
+               iDoubleValue = iDoubleValue + 1.
+               PUBLISH "debug" (SUBSTITUTE("Value &1 seen at instruction &2", iRegisterWork[iFollowRegister + 1], bttRegister.iCalculation)).
+               IF iDoubleValue GE 2 THEN DO:
+                  BackBlock:
+                  FOR EACH bttRegister
+                  WHERE bttRegister.iCalculation LT iCalculation
+                  BY bttRegister.iCalculation DESCENDING:
+                     iDoubleValue = iDoubleValue - 1.
+                     IF iDoubleValue EQ 0 THEN DO:
+                        ASSIGN
+                           opiOutput2 = bttRegister.iValue
+                        .
+                        LEAVE BackBlock.
+                     END.
+                  END.
+                  LEAVE ExecuteBlock.
+               END.
+            END.
+         END.
+
+         PUBLISH cDebugEvent (SUBSTITUTE("&1 &2 &3 &4 &5 &6",
+                                         cLine,
+                                         ttSubProgram.cOperation,
+                                         ttSubProgram.iA,
+                                         ttSubProgram.iB,
+                                         ttSubProgram.iC,
+                                         SUBSTITUTE("[&1, &2, &3, &4, &5, &6]",
+                                                    iRegisterWork[1],
+                                                    iRegisterWork[2],
+                                                    iRegisterWork[3],
+                                                    iRegisterWork[4],
+                                                    iRegisterWork[5],
+                                                    iRegisterWork[6]))).
+
+      END.
+
+      ASSIGN
+         ttProgram.iRegisterC = iRegisterWork[ttProgram.iC + 1]
+      .
+
+      IF ttProgram.iLine EQ iStopInstruction THEN DO:
+         iNrStop = iNrStop + 1.
+         PUBLISH "debug" (SUBSTITUTE("Reached Stop Instruction: &1 for &2 time", ttProgram.iLine, iNrStop)).
+
+         IF iNrStop EQ 5 THEN DO:
+            LEAVE ExecuteBlock.
+         END.
+      END.
+
+      ASSIGN
+         iRegisterWork[iRegister] = iRegisterWork[iRegister] + 1
+      .
+
+   END. /* ExecutBlock */
+   
+   PUBLISH "debug" (SUBSTITUTE("Calculation: &1", iCalculation)).
+
+   IF ipiPart EQ 1 THEN DO:
+      ASSIGN
+         opiOutput1 = iRegisterWork[1]
+      .
+   END.
 
 END PROCEDURE.
 
@@ -6445,7 +6788,7 @@ PROCEDURE getTT :
   Parameters:  
   Notes:       
 ------------------------------------------------------------------------------*/
-DEFINE OUTPUT PARAMETER TABLE FOR ttPath.
+DEFINE OUTPUT PARAMETER TABLE FOR ttRegister.
 
 END PROCEDURE.
 
@@ -6695,7 +7038,7 @@ END PROCEDURE.
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION getBinary Procedure 
 FUNCTION getBinary RETURNS CHARACTER
 (  /* parameter-definitions */ 
-   INPUT ipiNumber AS INTEGER   
+   INPUT ipiNumber AS INT64   
 ) :
 /*------------------------------------------------------------------------------
   Purpose:  
@@ -6722,9 +7065,9 @@ END FUNCTION.
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _FUNCTION getBitOperation Procedure 
 FUNCTION getBitOperation RETURNS INTEGER
 (  /* parameter-definitions */ 
-   INPUT ipiNumber1   AS INTEGER,
+   INPUT ipiNumber1   AS INT64,
    INPUT ipcOperation AS CHARACTER,
-   INPUT ipiNumber2   AS INTEGER
+   INPUT ipiNumber2   AS INT64
 ) :
 /*------------------------------------------------------------------------------
   Purpose:  
@@ -6737,7 +7080,7 @@ DEFINE VARIABLE iBit    AS INTEGER     NO-UNDO.
 DEFINE VARIABLE cBit1   AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE cBit2   AS CHARACTER   NO-UNDO.
 DEFINE VARIABLE cResult AS CHARACTER   NO-UNDO.
-DEFINE VARIABLE iResult AS INTEGER     NO-UNDO.
+DEFINE VARIABLE iResult AS INT64       NO-UNDO.
 
    ASSIGN
       cBinary1 = getBinary(ipiNumber1)
